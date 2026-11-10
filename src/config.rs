@@ -1,5 +1,6 @@
 use crate::i18n::Language;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +26,12 @@ pub struct Config {
     pub server_check: bool,
     /// Public addresses of the VPN servers the protected traffic may leave through.
     pub allowed_servers: Vec<IpAddr>,
+    /// User-given names, keyed by address text. Separate from `allowed_servers` so that existing settings keep loading.
+    pub server_names: BTreeMap<String, String>,
+    pub autostart: bool,
+    pub notifications: bool,
+    pub overlay: bool,
+    pub update_check: bool,
     /// `None` follows the Windows display language.
     pub language: Option<Language>,
 }
@@ -41,6 +48,11 @@ impl Default for Config {
             proxy_enabled: true,
             server_check: false,
             allowed_servers: Vec::new(),
+            server_names: BTreeMap::new(),
+            autostart: false,
+            notifications: true,
+            overlay: true,
+            update_check: true,
             language: None,
         }
     }
@@ -52,6 +64,10 @@ impl Config {
             && !self.trusted.is_empty()
             && (self.tun_enabled || self.proxy_enabled)
             && (!self.server_check || !self.allowed_servers.is_empty())
+    }
+
+    pub fn server_name(&self, address: IpAddr) -> Option<&str> {
+        self.server_names.get(&address.to_string()).map(String::as_str)
     }
 
     pub fn load() -> Self {
@@ -102,7 +118,16 @@ pub fn is_vpn_client(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_site;
+    use super::{Config, normalize_site};
+
+    #[test]
+    fn settings_from_older_versions_still_load() {
+        let old = r#"{"enabled":true,"sites":["example.com"],"server_check":true,"allowed_servers":["203.0.113.1"]}"#;
+        let config: Config = serde_json::from_str(old).unwrap();
+        assert!(config.enabled && config.notifications && config.overlay && config.update_check && !config.autostart);
+        assert_eq!(config.allowed_servers, ["203.0.113.1".parse::<std::net::IpAddr>().unwrap()]);
+        assert_eq!(config.server_name(config.allowed_servers[0]), None);
+    }
 
     #[test]
     fn reduces_urls_to_the_domain() {

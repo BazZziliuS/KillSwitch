@@ -51,6 +51,8 @@ impl Drop for Engine {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Plan {
     pub apps: Vec<PathBuf>,
+    /// Lose only IPv6, for when the tunnel covers IPv4 and IPv6 would go around it.
+    pub ipv6_only_apps: Vec<PathBuf>,
     pub sites: Vec<IpAddr>,
     /// VPN clients keep reaching blocked addresses: their server may share an address with a blocked site.
     pub exempt: Vec<PathBuf>,
@@ -75,6 +77,11 @@ pub fn apply(plan: &Plan) -> Result<Vec<PathBuf>, String> {
         let mut missing = Vec::new();
         for app in &plan.apps {
             if !add_app(&engine, app)? {
+                missing.push(app.clone());
+            }
+        }
+        for app in &plan.ipv6_only_apps {
+            if !add_app_ipv6(&engine, app)? {
                 missing.push(app.clone());
             }
         }
@@ -155,7 +162,7 @@ unsafe fn add_filter(
     engine: &Engine,
     label: &str,
     layer: GUID,
-    condition: &mut FWPM_FILTER_CONDITION0,
+    conditions: &mut [FWPM_FILTER_CONDITION0],
     action: FWP_ACTION_TYPE,
     weight: Option<u8>,
 ) -> Result<(), String> {
@@ -167,8 +174,8 @@ unsafe fn add_filter(
         providerKey: &mut provider_key,
         layerKey: layer,
         subLayerKey: SUBLAYER,
-        numFilterConditions: 1,
-        filterCondition: condition,
+        numFilterConditions: conditions.len() as u32,
+        filterCondition: conditions.as_mut_ptr(),
         ..Default::default()
     };
     match weight {
@@ -221,7 +228,29 @@ unsafe fn add_app(engine: &Engine, app: &Path) -> Result<bool, String> {
                 FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
                 FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
             ] {
-                add_filter(engine, &label, layer, condition, FWP_ACTION_BLOCK, None)?;
+                add_filter(engine, &label, layer, std::slice::from_mut(condition), FWP_ACTION_BLOCK, None)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+/// Loopback stays open: a local service on `::1` is not a route around the tunnel.
+unsafe fn add_app_ipv6(engine: &Engine, app: &Path) -> Result<bool, String> {
+    let label = format!("IPv6 {}", app.display());
+    let not_loopback = FWPM_FILTER_CONDITION0 {
+        fieldKey: FWPM_CONDITION_FLAGS,
+        matchType: FWP_MATCH_FLAGS_NONE_SET,
+        conditionValue: FWP_CONDITION_VALUE0 {
+            r#type: FWP_UINT32,
+            Anonymous: FWP_CONDITION_VALUE0_0 { uint32: FWP_CONDITION_FLAG_IS_LOOPBACK },
+        },
+    };
+    unsafe {
+        with_app_condition(app, |condition| {
+            let mut conditions = [*condition, not_loopback];
+            for layer in [FWPM_LAYER_ALE_AUTH_CONNECT_V6, FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6] {
+                add_filter(engine, &label, layer, &mut conditions, FWP_ACTION_BLOCK, None)?;
             }
             Ok(())
         })
@@ -233,7 +262,7 @@ unsafe fn exempt_client(engine: &Engine, client: &Path) -> Result<(), String> {
     unsafe {
         with_app_condition(client, |condition| {
             for layer in [FWPM_LAYER_ALE_AUTH_CONNECT_V4, FWPM_LAYER_ALE_AUTH_CONNECT_V6] {
-                add_filter(engine, &label, layer, condition, FWP_ACTION_PERMIT, Some(WEIGHT_CLIENT_PERMIT))?;
+                add_filter(engine, &label, layer, std::slice::from_mut(condition), FWP_ACTION_PERMIT, Some(WEIGHT_CLIENT_PERMIT))?;
             }
             Ok(())
         })?;
@@ -262,5 +291,7 @@ unsafe fn add_site(engine: &Engine, address: IpAddr) -> Result<(), String> {
     };
     let mut condition =
         FWPM_FILTER_CONDITION0 { fieldKey: FWPM_CONDITION_IP_REMOTE_ADDRESS, matchType: FWP_MATCH_EQUAL, conditionValue: value };
-    unsafe { add_filter(engine, &format!("site {address}"), layer, &mut condition, FWP_ACTION_BLOCK, Some(WEIGHT_SITE_BLOCK)) }
+    unsafe {
+        add_filter(engine, &format!("site {address}"), layer, std::slice::from_mut(&mut condition), FWP_ACTION_BLOCK, Some(WEIGHT_SITE_BLOCK))
+    }
 }

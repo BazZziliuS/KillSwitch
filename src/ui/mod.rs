@@ -2,6 +2,7 @@ mod add_apps;
 mod catalog;
 mod home;
 mod language;
+pub mod overlay;
 mod sites;
 mod theme;
 mod tray;
@@ -15,6 +16,7 @@ use crate::protection::monitor::{Shared, Status};
 use catalog::Catalog;
 use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, Ui, Vec2};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -26,7 +28,8 @@ const WINDOW_ICON_SIZE: u32 = 64;
 const WINDOW_ICON_COLOR: [u8; 3] = [0, 122, 255];
 const REFRESH: Duration = Duration::from_millis(500);
 
-pub fn run(shared: Arc<Shared>) -> eframe::Result {
+/// `start_hidden` leaves only the tray icon, for starting at logon.
+pub fn run(shared: Arc<Shared>, start_hidden: bool) -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("KillSwitch")
@@ -40,7 +43,7 @@ pub fn run(shared: Arc<Shared>) -> eframe::Result {
             }),
         ..Default::default()
     };
-    eframe::run_native("KillSwitch", options, Box::new(|cc| Ok(Box::new(App::new(cc, shared)))))
+    eframe::run_native("KillSwitch", options, Box::new(move |cc| Ok(Box::new(App::new(cc, shared, start_hidden)))))
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -49,6 +52,8 @@ enum Page {
     Vpn,
     AddApps,
     AddSite,
+    SiteScan,
+    ServerName,
     Language,
 }
 
@@ -68,14 +73,20 @@ struct App {
     search: String,
     notice: Option<String>,
     confirm_quit: bool,
+    editing_server: Option<IpAddr>,
+    scan: Option<sites::Scan>,
+    start_hidden: bool,
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>, shared: Arc<Shared>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, shared: Arc<Shared>, start_hidden: bool) -> Self {
         if let Ok(handle) = cc.window_handle()
             && let RawWindowHandle::Win32(win32) = handle.as_raw()
         {
             shared.hwnd.store(win32.hwnd.get(), Ordering::SeqCst);
+        }
+        if start_hidden {
+            tray::begin_hidden_start(&shared);
         }
         theme::install(&cc.egui_ctx);
         let ctx = cc.egui_ctx.clone();
@@ -89,6 +100,9 @@ impl App {
             search: String::new(),
             notice: None,
             confirm_quit: false,
+            editing_server: None,
+            scan: None,
+            start_hidden,
         }
     }
 
@@ -156,6 +170,14 @@ impl eframe::App for App {
             tray::hide_window(&self.shared);
         }
         ctx.request_repaint_after(REFRESH);
+        if self.start_hidden {
+            if ctx.cumulative_frame_nr() == 0 {
+                ctx.request_repaint();
+            } else {
+                tray::finish_hidden_start(&self.shared);
+                self.start_hidden = false;
+            }
+        }
 
         let status = self.shared.status.lock().unwrap().clone();
         let mut config = self.shared.config.lock().unwrap().clone();
@@ -168,6 +190,8 @@ impl eframe::App for App {
             Page::Vpn => self.vpn_page(ui, view, &mut config),
             Page::AddApps => self.add_apps_page(ui, view, &mut config),
             Page::AddSite => self.add_site_page(ui, view, &mut config),
+            Page::SiteScan => self.site_scan_page(ui, view, &mut config),
+            Page::ServerName => self.server_name_page(ui, view, &mut config),
             Page::Language => self.language_page(ui, view, &mut config),
         });
         self.quit_alert(&ctx, view);

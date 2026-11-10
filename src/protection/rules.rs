@@ -26,19 +26,34 @@ pub fn adapter_matches(alias: &str, configured: &str) -> bool {
     }
 }
 
-pub fn tun_active(config: &Config, snapshot: &Snapshot) -> bool {
+fn is_tunnel(config: &Config, snapshot: &Snapshot, interface: Option<u32>) -> bool {
     snapshot.adapters.iter().any(|adapter| {
         adapter.up
-            && snapshot.route_interface == Some(adapter.index)
+            && interface == Some(adapter.index)
             && config.tun_adapters.iter().any(|name| adapter_matches(&adapter.name, name))
     })
 }
 
+pub fn tun_active(config: &Config, snapshot: &Snapshot) -> bool {
+    is_tunnel(config, snapshot, snapshot.route_interface)
+}
+
+/// The tunnel carries IPv4, but IPv6 would leave through another adapter.
+pub fn ipv6_bypasses_tunnel(config: &Config, snapshot: &Snapshot) -> bool {
+    config.tun_enabled
+        && tun_active(config, snapshot)
+        && snapshot.route_interface_v6.is_some()
+        && !is_tunnel(config, snapshot, snapshot.route_interface_v6)
+}
+
 /// How to reach the internet through the VPN for the server check; `None` when there is nothing to check.
 pub fn exit_route(config: &Config, snapshot: &Snapshot) -> Option<Route> {
-    if !config.server_check {
-        None
-    } else if config.tun_enabled && tun_active(config, snapshot) {
+    if config.server_check { vpn_route(config, snapshot) } else { None }
+}
+
+/// How to reach the internet through the VPN right now; `None` when the VPN is off.
+pub fn vpn_route(config: &Config, snapshot: &Snapshot) -> Option<Route> {
+    if config.tun_enabled && tun_active(config, snapshot) {
         snapshot.route_interface.map(Route::Tunnel)
     } else if config.proxy_enabled && snapshot.proxy.active() {
         snapshot.proxy.server.clone().map(Route::Proxy)
@@ -105,6 +120,23 @@ mod tests {
     #[test]
     fn trusted_network_with_tun_is_allowed() {
         assert!(evaluate(&config(), &safe_snapshot()).is_empty());
+    }
+
+    #[test]
+    fn ipv6_outside_the_tunnel_is_detected() {
+        const PHYSICAL_INDEX: u32 = 3;
+        let without_route = safe_snapshot();
+        assert!(!ipv6_bypasses_tunnel(&config(), &without_route));
+        let through_tunnel = Snapshot { route_interface_v6: Some(TUN_INDEX), ..safe_snapshot() };
+        assert!(!ipv6_bypasses_tunnel(&config(), &through_tunnel));
+        let around_tunnel = Snapshot { route_interface_v6: Some(PHYSICAL_INDEX), ..safe_snapshot() };
+        assert!(ipv6_bypasses_tunnel(&config(), &around_tunnel));
+    }
+
+    #[test]
+    fn ipv6_is_not_guarded_without_a_tunnel() {
+        let proxy_only = Snapshot { route_interface: Some(3), route_interface_v6: Some(3), ..safe_snapshot() };
+        assert!(!ipv6_bypasses_tunnel(&config(), &proxy_only));
     }
 
     fn checked_config() -> Config {

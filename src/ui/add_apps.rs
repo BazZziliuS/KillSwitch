@@ -1,8 +1,7 @@
-use super::theme;
 use super::widgets::{self, Row, Trailing, section};
 use super::{App, Page, View};
 use crate::config::Config;
-use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, Ui};
+use eframe::egui::{self, Ui};
 use std::path::Path;
 
 impl App {
@@ -14,20 +13,7 @@ impl App {
             self.notice = None;
         }
         ui.add_space(6.0);
-        Frame::new()
-            .fill(palette.card)
-            .corner_radius(CornerRadius::same(10))
-            .inner_margin(Margin::symmetric(12, 9))
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.search)
-                        .hint_text(RichText::new(text.search).color(palette.tertiary))
-                        .font(theme::body())
-                        .text_color(palette.text)
-                        .frame(Frame::NONE)
-                        .desired_width(f32::INFINITY),
-                );
-            });
+        widgets::text_field(ui, palette, &mut self.search, text.search);
         self.show_notice(ui, view);
 
         let ctx = ui.ctx().clone();

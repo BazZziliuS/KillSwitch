@@ -7,9 +7,10 @@ mod i18n;
 mod platform;
 mod protection;
 mod ui;
+mod updates;
 
 use config::Config;
-use platform::firewall;
+use platform::{autostart, firewall};
 use protection::monitor::{self, Shared};
 use std::sync::atomic::Ordering;
 
@@ -35,8 +36,15 @@ fn main() -> eframe::Result {
         return Ok(());
     }
 
-    let shared = Shared::new(Config::load());
-    let monitor_shared = shared.clone();
+    let config = Config::load();
+    if config.autostart {
+        // Keeps the scheduled task pointing here if the program has been moved.
+        std::thread::spawn(|| autostart::set(true));
+    }
+    let shared = Shared::new(config);
+    let (monitor_shared, overlay_shared, updates_shared) = (shared.clone(), shared.clone(), shared.clone());
     std::thread::spawn(move || monitor::run(monitor_shared));
-    ui::run(shared)
+    std::thread::spawn(move || ui::overlay::run(overlay_shared));
+    std::thread::spawn(move || updates::run(updates_shared));
+    ui::run(shared, has(autostart::ARGUMENT))
 }

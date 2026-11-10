@@ -63,6 +63,8 @@ pub fn print_status() {
     }
     println!("proxy: {:?}", snapshot.proxy);
     println!("tun active: {}", rules::tun_active(&config, &snapshot));
+    println!("ipv6 route interface: {:?}", snapshot.route_interface_v6);
+    println!("ipv6 bypasses tunnel: {}", rules::ipv6_bypasses_tunnel(&config, &snapshot));
     println!("errors: {:?}", snapshot.errors);
     println!("block reasons: {:?}", rules::evaluate(&config, &snapshot));
 }

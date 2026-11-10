@@ -10,7 +10,9 @@ use std::sync::atomic::Ordering;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Dwm::{DWMWA_CLOAK, DwmSetWindowAttribute};
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::BOOL;
 
 const ICON_SIZE: u32 = 32;
 const LOOP_TIMEOUT_MS: u32 = 200;
@@ -74,6 +76,28 @@ pub fn hide_window(shared: &Shared) {
     unsafe {
         let _ = ShowWindow(HWND(shared.hwnd.load(Ordering::SeqCst) as *mut _), SW_HIDE);
     }
+}
+
+fn set_cloaked(shared: &Shared, cloaked: bool) {
+    let value = BOOL::from(cloaked);
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            HWND(shared.hwnd.load(Ordering::SeqCst) as *mut _),
+            DWMWA_CLOAK,
+            (&raw const value).cast(),
+            size_of::<BOOL>() as u32,
+        );
+    }
+}
+
+/// eframe always shows the window after its first frame. Cloaking keeps that from being seen.
+pub fn begin_hidden_start(shared: &Shared) {
+    set_cloaked(shared, true);
+}
+
+pub fn finish_hidden_start(shared: &Shared) {
+    hide_window(shared);
+    set_cloaked(shared, false);
 }
 
 fn build(open: &MenuItem, quit: &MenuItem, state: State, strings: &'static Strings) -> Result<TrayIcon, String> {

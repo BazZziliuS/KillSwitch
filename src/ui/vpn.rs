@@ -2,7 +2,10 @@ use super::widgets::{self, Row, Trailing, section};
 use super::{App, Page, View};
 use crate::config::Config;
 use crate::protection::rules;
-use eframe::egui::{self, Ui};
+use eframe::egui::{self, Key, Ui};
+use std::net::IpAddr;
+
+const MAX_SERVER_NAME: usize = 40;
 
 impl App {
     pub(super) fn vpn_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
@@ -44,14 +47,46 @@ impl App {
                     }
                 });
             }
-            server_section(ui, view, config);
+            if status.ipv6_guarded {
+                widgets::footnote(ui, text.ipv6_guarded, palette.orange);
+            }
+            if let Some(address) = server_section(ui, view, config) {
+                self.search = config.server_name(address).unwrap_or_default().to_owned();
+                self.editing_server = Some(address);
+                self.page = Page::ServerName;
+            }
             ui.add_space(20.0);
         });
     }
+
+    pub(super) fn server_name_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
+        let (palette, text) = (&view.palette, view.text);
+        let nav = widgets::nav_bar(ui, palette, text.server_name, text.back, Some(text.done));
+        ui.add_space(6.0);
+        let field = widgets::text_field(ui, palette, &mut self.search, text.server_name_hint);
+        let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+        if let Some(address) = self.editing_server {
+            widgets::footnote(ui, &address.to_string(), palette.secondary);
+            if nav.done || submitted {
+                let name: String = self.search.trim().chars().take(MAX_SERVER_NAME).collect();
+                if name.is_empty() {
+                    config.server_names.remove(&address.to_string());
+                } else {
+                    config.server_names.insert(address.to_string(), name);
+                }
+            }
+        }
+        if nav.back || nav.done || submitted {
+            self.editing_server = None;
+            self.page = Page::Vpn;
+        }
+    }
 }
 
-fn server_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {
+/// Returns the server the user clicked to rename.
+fn server_section(ui: &mut Ui, view: View<'_>, config: &mut Config) -> Option<IpAddr> {
     let (palette, text) = (&view.palette, view.text);
+    let mut rename = None;
     let current = view.status.snapshot.exit_ip;
     let mut toggle_current = false;
     let mut remove = None;
@@ -66,31 +101,51 @@ fn server_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {
         match current {
             Some(address) => {
                 let allowed = config.allowed_servers.contains(&address);
-                let title = address.to_string();
-                let row = Row::new("server-current", &title, Trailing::Switch { on: allowed, enabled: true })
-                    .subtitle(text.server_current, palette.secondary);
-                toggle_current = group.row(row).trailing_clicked;
+                let ip = address.to_string();
+                let (title, subtitle) = match config.server_name(address) {
+                    Some(name) => (name.to_owned(), format!("{ip} · {}", text.server_current)),
+                    None => (ip, text.server_current.to_owned()),
+                };
+                let mut row = Row::new("server-current", &title, Trailing::Switch { on: allowed, enabled: true })
+                    .subtitle(&subtitle, palette.secondary);
+                if allowed {
+                    row = row.tappable();
+                }
+                let output = group.row(row);
+                toggle_current = output.trailing_clicked;
+                if output.clicked && allowed {
+                    rename = Some(address);
+                }
             }
             None => {
                 group.row(Row::new("server-detecting", text.server_detecting, Trailing::None));
             }
         }
         for (index, address) in config.allowed_servers.iter().enumerate().filter(|(_, address)| Some(**address) != current) {
-            let title = address.to_string();
-            let row = Row::new(&title, &title, Trailing::Remove).subtitle(text.server_allowed, palette.secondary);
-            if group.row(row).trailing_clicked {
+            let ip = address.to_string();
+            let (title, subtitle) = match config.server_name(*address) {
+                Some(name) => (name, ip.as_str()),
+                None => (ip.as_str(), text.server_allowed),
+            };
+            let output = group.row(Row::new(&ip, title, Trailing::Remove).subtitle(subtitle, palette.secondary).tappable());
+            if output.trailing_clicked {
                 remove = Some(index);
+            } else if output.clicked {
+                rename = Some(*address);
             }
         }
     });
     if toggle_current && let Some(address) = current {
         if config.allowed_servers.contains(&address) {
             config.allowed_servers.retain(|entry| *entry != address);
+            config.server_names.remove(&address.to_string());
         } else {
             config.allowed_servers.push(address);
         }
     }
     if let Some(index) = remove {
-        config.allowed_servers.remove(index);
+        let address = config.allowed_servers.remove(index);
+        config.server_names.remove(&address.to_string());
     }
+    rename
 }

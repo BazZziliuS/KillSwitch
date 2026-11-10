@@ -24,7 +24,12 @@ English · [Русский](README.ru.md)
 
 - **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
 - **Choose the sites.** Listed domains become unreachable from every app except your VPN client while protection is blocking.
-- **Allowed servers.** Optionally, apps and sites go offline when the VPN moves to a server you haven't allowed.
+- **Finds related addresses.** When you add a site, KillSwitch reads it through the VPN and offers its subdomains and the services it uses.
+- **Allowed servers.** Optionally, apps and sites go offline when the VPN moves to a server you haven't allowed. Servers can be given names.
+- **Notifications and a banner.** Windows notifications say when apps are cut off or back online, and a banner appears over an offline app while it's in front.
+- **IPv6 leak guard.** If IPv6 would go around the tunnel, it's turned off for the selected apps.
+- **Starts with Windows.** Optional, straight to the tray and without a UAC prompt.
+- **Update check.** Tells you when a new release is out. Nothing is downloaded automatically.
 - **Trusted networks.** On any other network the selected apps go offline, even with the VPN on.
 - **VPN awareness.** Works with TUN mode and system proxy mode in clients such as [Throne](https://github.com/throneproj/Throne) and Happ.
 - **Other tunnels don't count.** Tailscale and similar adapters are not mistaken for your VPN.
@@ -67,7 +72,9 @@ Closing the window keeps KillSwitch running in the tray. Quitting from the app o
 - While blocked, an app also loses access to `127.0.0.1`.
 - Site blocking works on addresses, so sites sharing a CDN address go offline together, and a site can briefly load from an address not seen yet. Only the domain and its `www` address are covered. Non-Latin domains must be entered in punycode.
 - A server is identified by its public address. If the VPN changes server without restarting the tunnel, the change is noticed at the next check, up to 15 s later. A server with several exit addresses needs each one allowed.
-- KillSwitch doesn't start with Windows yet. Protection only applies while it's running, apart from a block already in place.
+- Protection only applies while KillSwitch is running, apart from a block already in place. Turn on **Start with Windows** to cover logon.
+- The search for related addresses reads a site's page and scripts as text and runs no code, so hosts computed in JavaScript at run time aren't found.
+- The banner can't appear over games in exclusive fullscreen.
 
 ## Command line
 
@@ -76,6 +83,7 @@ Closing the window keeps KillSwitch running in the tray. Quitting from the app o
 | `--unblock` | Remove all blocks left behind while the app isn't running |
 | `--status` | Print detected networks, adapters and block reasons, without admin rights |
 | `--dry-run` | Run the full app without admin rights and without writing any filter |
+| `--autostart` | Start in the tray without opening the window |
 
 ## Building from source
 

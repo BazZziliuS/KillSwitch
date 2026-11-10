@@ -3,8 +3,10 @@ use super::widgets::{self, Glyph, Row, Trailing, section};
 use super::{App, Page, View};
 use crate::config::{Config, TrustedNetwork};
 use crate::i18n::{Language, Strings};
+use crate::platform::autostart;
 use crate::protection::monitor::Status;
-use crate::protection::rules::{self, Reason};
+use crate::protection::rules;
+use crate::updates;
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
 const COLOR_ANIMATION: f32 = 0.3;
@@ -36,6 +38,15 @@ impl App {
                 config.enabled = !config.enabled;
             }
         });
+        let update = self.shared.update.lock().unwrap().clone();
+        if let Some(version) = update {
+            section(ui, palette, None, None, |group| {
+                let title = (text.update_available)(&version);
+                if group.row(Row::new("update", &title, Trailing::None).action(palette.accent)).clicked {
+                    updates::open_releases_page();
+                }
+            });
+        }
         ui.add_space(4.0);
 
         egui::ScrollArea::vertical().id_salt("home").auto_shrink(false).show(ui, |ui| {
@@ -44,6 +55,7 @@ impl App {
                 self.open_add_site();
             }
             networks_section(ui, view, config);
+            self.general_section(ui, view, config);
 
             let (label, color) = vpn_summary(palette, text, config, status);
             let language = config.language.map_or(text.system_language, Language::native_name);
@@ -77,6 +89,30 @@ impl App {
             });
             ui.add_space(20.0);
         });
+    }
+
+    fn general_section(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
+        let (palette, text) = (&view.palette, view.text);
+        let mut toggle_autostart = false;
+        section(ui, palette, Some(text.general), None, |group| {
+            let switch = |on| Trailing::Switch { on, enabled: true };
+            toggle_autostart = group.row(Row::new("autostart", text.autostart, switch(config.autostart))).trailing_clicked;
+            if group.row(Row::new("notifications", text.notifications, switch(config.notifications))).trailing_clicked {
+                config.notifications = !config.notifications;
+            }
+            if group.row(Row::new("overlay", text.overlay, switch(config.overlay))).trailing_clicked {
+                config.overlay = !config.overlay;
+            }
+            if group.row(Row::new("update-check", text.update_check, switch(config.update_check))).trailing_clicked {
+                config.update_check = !config.update_check;
+            }
+        });
+        if toggle_autostart {
+            match autostart::set(!config.autostart) {
+                Ok(()) => config.autostart = !config.autostart,
+                Err(error) => self.notice = Some((text.autostart_failed)(&error)),
+            }
+        }
     }
 
     fn apps_section(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
@@ -212,7 +248,7 @@ fn hero_state(view: View<'_>, config: &Config) -> Hero {
         return Hero { color: palette.orange, glyph: Glyph::Exclamation, title: text.failed_title, subtitle, trust: None };
     }
     if status.blocked {
-        let subtitle = status.reasons.iter().map(|reason| explain(reason, text)).collect::<Vec<_>>().join(" ");
+        let subtitle = status.reasons.iter().map(|reason| text.explain(reason)).collect::<Vec<_>>().join(" ");
         return Hero { color: palette.red, glyph: Glyph::Cross, title: text.blocked_title, subtitle, trust };
     }
     if status.enabled {
@@ -230,17 +266,6 @@ fn hero_state(view: View<'_>, config: &Config) -> Hero {
         title: text.off_title,
         subtitle: text.off_subtitle.to_owned(),
         trust: None,
-    }
-}
-
-fn explain(reason: &Reason, text: &Strings) -> String {
-    match reason {
-        Reason::NoNetwork => text.reason_no_network.to_owned(),
-        Reason::UntrustedNetwork(name) => (text.reason_untrusted)(name),
-        Reason::VpnOff => text.reason_vpn_off.to_owned(),
-        Reason::DetectionFailed(_) => text.reason_detection_failed.to_owned(),
-        Reason::ForeignServer(address) => (text.reason_foreign_server)(&address.to_string()),
-        Reason::ServerUnknown => text.reason_server_unknown.to_owned(),
     }
 }
 

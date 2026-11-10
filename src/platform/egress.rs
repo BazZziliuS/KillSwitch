@@ -12,7 +12,7 @@ use windows::core::{HSTRING, PCWSTR, w};
 /// IPv4-only hosts, so that one server always yields one comparable address.
 const SERVICES: [PCWSTR; 2] = [w!("api.ipify.org"), w!("ipv4.icanhazip.com")];
 const TIMEOUT_MS: i32 = 5000;
-const MAX_RESPONSE: usize = 64;
+const MAX_ADDRESS_RESPONSE: usize = 64;
 
 struct Handle(*mut c_void);
 
@@ -43,7 +43,7 @@ pub fn public_ip(proxy: Option<&str>) -> Result<IpAddr, String> {
 }
 
 fn query(host: PCWSTR, proxy: Option<&str>) -> Result<IpAddr, String> {
-    let body = fetch(host, proxy)?;
+    let body = fetch(host, w!("/"), proxy, MAX_ADDRESS_RESPONSE)?;
     parse_address(&body).ok_or_else(|| "unexpected response".to_owned())
 }
 
@@ -51,21 +51,24 @@ fn parse_address(body: &[u8]) -> Option<IpAddr> {
     std::str::from_utf8(body).ok()?.trim().parse().ok()
 }
 
-fn fetch(host: PCWSTR, proxy: Option<&str>) -> Result<Vec<u8>, String> {
+/// Performs an HTTPS GET and returns at most `limit` bytes of the body.
+pub fn fetch(host: PCWSTR, path: PCWSTR, proxy: Option<&str>, limit: usize) -> Result<Vec<u8>, String> {
     let proxy = proxy.map(HSTRING::from);
     let (access, proxy_name) = match &proxy {
         Some(name) => (WINHTTP_ACCESS_TYPE_NAMED_PROXY, PCWSTR(name.as_ptr())),
         None => (WINHTTP_ACCESS_TYPE_NO_PROXY, PCWSTR::null()),
     };
     unsafe {
-        let session = Handle::new(WinHttpOpen(w!("KillSwitch"), access, proxy_name, PCWSTR::null(), 0), "open session")?;
+        // Sites commonly refuse clients that don't identify as a browser.
+        let agent = w!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) KillSwitch");
+        let session = Handle::new(WinHttpOpen(agent, access, proxy_name, PCWSTR::null(), 0), "open session")?;
         WinHttpSetTimeouts(session.0, TIMEOUT_MS, TIMEOUT_MS, TIMEOUT_MS, TIMEOUT_MS).map_err(|error| error.to_string())?;
         let connection = Handle::new(WinHttpConnect(session.0, host, INTERNET_DEFAULT_HTTPS_PORT, 0), "connect")?;
         let request = Handle::new(
             WinHttpOpenRequest(
                 connection.0,
                 w!("GET"),
-                w!("/"),
+                path,
                 PCWSTR::null(),
                 PCWSTR::null(),
                 std::ptr::null(),
@@ -76,11 +79,11 @@ fn fetch(host: PCWSTR, proxy: Option<&str>) -> Result<Vec<u8>, String> {
         WinHttpSendRequest(request.0, None, None, 0, 0, 0).map_err(|error| error.to_string())?;
         WinHttpReceiveResponse(request.0, std::ptr::null_mut()).map_err(|error| error.to_string())?;
 
-        let mut body = vec![0u8; MAX_RESPONSE];
+        let mut body = vec![0u8; limit];
         let mut filled = 0usize;
-        while filled < MAX_RESPONSE {
+        while filled < limit {
             let mut read = 0u32;
-            let free = (MAX_RESPONSE - filled) as u32;
+            let free = (limit - filled) as u32;
             WinHttpReadData(request.0, body[filled..].as_mut_ptr().cast(), free, &mut read).map_err(|error| error.to_string())?;
             if read == 0 {
                 break;

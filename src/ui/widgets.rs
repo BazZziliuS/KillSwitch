@@ -52,6 +52,12 @@ impl<'a> Row<'a> {
         self
     }
 
+    /// Makes the whole row respond to clicks, apart from its trailing control.
+    pub fn tappable(mut self) -> Self {
+        self.action = true;
+        self
+    }
+
     /// A row that is a button in its own right, drawn in the accent color.
     pub fn action(mut self, color: Color32) -> Self {
         self.title_color = Some(color);
@@ -179,6 +185,24 @@ impl Group<'_> {
         }
         output
     }
+}
+
+pub fn text_field(ui: &mut Ui, palette: &Palette, value: &mut String, hint: &str) -> egui::Response {
+    Frame::new()
+        .fill(palette.card)
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(egui::Margin::symmetric(12, 9))
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::singleline(value)
+                    .hint_text(RichText::new(hint).color(palette.tertiary))
+                    .font(theme::body())
+                    .text_color(palette.text)
+                    .frame(Frame::NONE)
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner
 }
 
 fn paint_width(trailing: &Trailing<'_>, ui: &Ui) -> f32 {

@@ -5,7 +5,7 @@ use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS};
 use windows::Win32::NetworkManagement::IpHelper::*;
 use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows::Win32::Networking::NetworkListManager::*;
-use windows::Win32::Networking::WinSock::AF_INET;
+use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6, SOCKADDR_IN6};
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW};
 use windows::core::{GUID, w};
@@ -15,6 +15,8 @@ const FLAG_HARDWARE: u8 = 1 << 0;
 const FLAG_FILTER: u8 = 1 << 1;
 /// Any public address works: the question is only which interface the OS would route it through.
 const ROUTE_PROBE: [u8; 4] = [1, 1, 1, 1];
+/// 2606:4700:4700::1111
+const ROUTE_PROBE_V6: [u8; 16] = [0x26, 0x06, 0x47, 0, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11];
 
 #[derive(Clone, Debug)]
 pub struct Adapter {
@@ -51,6 +53,8 @@ pub struct Snapshot {
     /// Networks on physical adapters only, so VPN and Tailscale "networks" never count as the current location.
     pub networks: Vec<Network>,
     pub route_interface: Option<u32>,
+    /// `None` when this machine has no route to the IPv6 internet.
+    pub route_interface_v6: Option<u32>,
     pub proxy: Proxy,
     /// Public address seen through the VPN; `None` until a recent check has succeeded.
     pub exit_ip: Option<IpAddr>,
@@ -78,7 +82,14 @@ pub fn snapshot() -> Snapshot {
     let mut index = 0u32;
     let route_interface =
         (unsafe { GetBestInterface(u32::from_ne_bytes(ROUTE_PROBE), &mut index) } == ERROR_SUCCESS.0).then_some(index);
-    Snapshot { adapters, networks, route_interface, proxy: system_proxy(), exit_ip: None, errors }
+    Snapshot { adapters, networks, route_interface, route_interface_v6: ipv6_route(), proxy: system_proxy(), exit_ip: None, errors }
+}
+
+fn ipv6_route() -> Option<u32> {
+    let mut destination = SOCKADDR_IN6 { sin6_family: AF_INET6, ..Default::default() };
+    destination.sin6_addr.u.Byte = ROUTE_PROBE_V6;
+    let mut index = 0u32;
+    (unsafe { GetBestInterfaceEx((&raw const destination).cast(), &mut index) } == ERROR_SUCCESS.0).then_some(index)
 }
 
 fn text(buffer: &[u16]) -> String {

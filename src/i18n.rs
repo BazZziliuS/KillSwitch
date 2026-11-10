@@ -1,5 +1,6 @@
 //! Every user-facing string. Each language fills the same struct, so a missing translation cannot compile.
 
+use crate::protection::rules::Reason;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Globalization::GetUserDefaultUILanguage;
 
@@ -121,6 +122,40 @@ pub struct Strings {
     pub tray_failed: &'static str,
     pub unblock_done: &'static str,
     pub unblock_failed: fn(&str) -> String,
+    pub general: &'static str,
+    pub autostart: &'static str,
+    pub autostart_failed: fn(&str) -> String,
+    pub notifications: &'static str,
+    pub overlay: &'static str,
+    pub overlay_title: &'static str,
+    pub update_check: &'static str,
+    pub update_available: fn(&str) -> String,
+    pub update_body: &'static str,
+    pub restored_title: &'static str,
+    pub restored_body: &'static str,
+    pub ipv6_guarded: &'static str,
+    pub server_name: &'static str,
+    pub server_name_hint: &'static str,
+    pub scan_title: &'static str,
+    pub scan_running: &'static str,
+    pub scan_nothing: &'static str,
+    pub scan_subdomains: &'static str,
+    pub scan_services: &'static str,
+    pub scan_services_footer: &'static str,
+    pub scan_needs_vpn: &'static str,
+}
+
+impl Strings {
+    pub fn explain(&self, reason: &Reason) -> String {
+        match reason {
+            Reason::NoNetwork => self.reason_no_network.to_owned(),
+            Reason::UntrustedNetwork(name) => (self.reason_untrusted)(name),
+            Reason::VpnOff => self.reason_vpn_off.to_owned(),
+            Reason::DetectionFailed(_) => self.reason_detection_failed.to_owned(),
+            Reason::ForeignServer(address) => (self.reason_foreign_server)(&address.to_string()),
+            Reason::ServerUnknown => self.reason_server_unknown.to_owned(),
+        }
+    }
 }
 
 static ENGLISH: Strings = Strings {
@@ -136,7 +171,7 @@ static ENGLISH: Strings = Strings {
     site_invalid: "That doesn't look like a domain. Non-Latin domains must be entered in punycode.",
     site_unresolved: "Address not found yet",
     servers: "Server",
-    servers_footer: "Checks your public address through the VPN about every 15 seconds using ipify or icanhazip. On any other server, apps and sites go offline.",
+    servers_footer: "Checks your public address through the VPN about every 15 seconds using ipify or icanhazip. On any other server, apps and sites go offline. Click an allowed server to name it.",
     server_check: "Allow Only Selected Servers",
     server_current: "Connected now",
     server_allowed: "Allowed",
@@ -202,6 +237,27 @@ static ENGLISH: Strings = Strings {
     tray_failed: "KillSwitch: blocking failed",
     unblock_done: "All KillSwitch blocks have been removed.",
     unblock_failed: |error| format!("Couldn't remove the blocks: {error}"),
+    general: "General",
+    autostart: "Start with Windows",
+    autostart_failed: |error| format!("Couldn't change autostart: {error}"),
+    notifications: "Notifications",
+    overlay: "Banner Over Offline Apps",
+    overlay_title: "This App Is Offline",
+    update_check: "Check for Updates",
+    update_available: |version| format!("KillSwitch {version} is available"),
+    update_body: "Open KillSwitch to go to the download page.",
+    restored_title: "Apps Are Back Online",
+    restored_body: "KillSwitch is no longer blocking them.",
+    ipv6_guarded: "IPv6 would bypass the VPN on this network, so it's turned off for the selected apps.",
+    server_name: "Server Name",
+    server_name_hint: "Netherlands",
+    scan_title: "Related Addresses",
+    scan_running: "Reading the site through the VPN…",
+    scan_nothing: "Nothing else found on this site.",
+    scan_subdomains: "Subdomains",
+    scan_services: "Other Services",
+    scan_services_footer: "Other sites may rely on these too, and blocking one takes it offline for them as well.",
+    scan_needs_vpn: "Site added. Its subdomains weren't searched for, because that would reveal the visit without the VPN.",
 };
 
 static RUSSIAN: Strings = Strings {
@@ -217,7 +273,7 @@ static RUSSIAN: Strings = Strings {
     site_invalid: "Это не похоже на домен. Кириллические домены вводите в формате punycode.",
     site_unresolved: "Адрес пока не определён",
     servers: "Сервер",
-    servers_footer: "Примерно раз в 15 секунд внешний адрес проверяется через VPN с помощью ipify или icanhazip. На любом другом сервере приложения и сайты отключаются.",
+    servers_footer: "Примерно раз в 15 секунд внешний адрес проверяется через VPN с помощью ipify или icanhazip. На любом другом сервере приложения и сайты отключаются. Нажмите на разрешённый сервер, чтобы дать ему название.",
     server_check: "Только выбранные серверы",
     server_current: "Подключён сейчас",
     server_allowed: "Разрешён",
@@ -283,4 +339,25 @@ static RUSSIAN: Strings = Strings {
     tray_failed: "KillSwitch: ошибка блокировки",
     unblock_done: "Все блокировки KillSwitch сняты.",
     unblock_failed: |error| format!("Не удалось снять блокировки: {error}"),
+    general: "Общие",
+    autostart: "Запускать вместе с Windows",
+    autostart_failed: |error| format!("Не удалось изменить автозапуск: {error}"),
+    notifications: "Уведомления",
+    overlay: "Плашка на отключённых приложениях",
+    overlay_title: "Приложение отключено от интернета",
+    update_check: "Проверять обновления",
+    update_available: |version| format!("Доступна версия KillSwitch {version}"),
+    update_body: "Откройте KillSwitch, чтобы перейти на страницу загрузки.",
+    restored_title: "Приложения снова в сети",
+    restored_body: "KillSwitch больше их не блокирует.",
+    ipv6_guarded: "В этой сети IPv6 шёл бы мимо VPN, поэтому для выбранных приложений он отключён.",
+    server_name: "Название сервера",
+    server_name_hint: "Нидерланды",
+    scan_title: "Связанные адреса",
+    scan_running: "Читаем сайт через VPN…",
+    scan_nothing: "Других адресов на сайте не найдено.",
+    scan_subdomains: "Поддомены",
+    scan_services: "Сторонние сервисы",
+    scan_services_footer: "Ими могут пользоваться и другие сайты, поэтому блокировка отключит сервис и для них.",
+    scan_needs_vpn: "Сайт добавлен. Поддомены не искались: без VPN это раскрыло бы посещение сайта.",
 };
