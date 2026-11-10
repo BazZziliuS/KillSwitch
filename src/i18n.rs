@@ -143,6 +143,10 @@ pub struct Strings {
     pub scan_services: &'static str,
     pub scan_services_footer: &'static str,
     pub scan_needs_vpn: &'static str,
+    pub site_filters: &'static str,
+    pub site_filters_footer: &'static str,
+    pub site_filter_invalid: &'static str,
+    pub site_filtered: &'static str,
 }
 
 impl Strings {
@@ -258,6 +262,10 @@ static ENGLISH: Strings = Strings {
     scan_services: "Other Services",
     scan_services_footer: "Other sites may rely on these too, and blocking one takes it offline for them as well.",
     scan_needs_vpn: "Site added. Its subdomains weren't searched for, because that would reveal the visit without the VPN.",
+    site_filters: "Exclusions",
+    site_filters_footer: "Regular expressions, not case-sensitive. A plain word matches anywhere in the domain. Matching domains aren't offered or blocked. For example: ads, ^cdn\\., \\.ru$",
+    site_filter_invalid: "That isn't a valid regular expression.",
+    site_filtered: "Excluded by a filter",
 };
 
 static RUSSIAN: Strings = Strings {
@@ -360,4 +368,8 @@ static RUSSIAN: Strings = Strings {
     scan_services: "Сторонние сервисы",
     scan_services_footer: "Ими могут пользоваться и другие сайты, поэтому блокировка отключит сервис и для них.",
     scan_needs_vpn: "Сайт добавлен. Поддомены не искались: без VPN это раскрыло бы посещение сайта.",
+    site_filters: "Исключения",
+    site_filters_footer: "Регулярные выражения без учёта регистра. Обычное слово ищется в любом месте домена. Совпавшие домены не предлагаются и не блокируются. Например: ads, ^cdn\\., \\.ru$",
+    site_filter_invalid: "Это не похоже на правильное регулярное выражение.",
+    site_filtered: "Исключён фильтром",
 };

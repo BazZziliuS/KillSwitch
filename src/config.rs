@@ -1,4 +1,5 @@
 use crate::i18n::Language;
+use regex::{RegexSet, RegexSetBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::net::IpAddr;
@@ -17,6 +18,8 @@ pub struct Config {
     pub apps: Vec<PathBuf>,
     /// Domains made unreachable from every app, except VPN clients, while protection is blocking.
     pub sites: Vec<String>,
+    /// Regular expressions; a domain matching any of them is neither offered by the site search nor blocked.
+    pub site_filters: Vec<String>,
     pub trusted: Vec<TrustedNetwork>,
     pub tun_enabled: bool,
     /// Adapter aliases counted as the VPN tunnel. Other tunnels (e.g. Tailscale) must not satisfy the check.
@@ -42,6 +45,7 @@ impl Default for Config {
             enabled: false,
             apps: Vec::new(),
             sites: Vec::new(),
+            site_filters: Vec::new(),
             trusted: Vec::new(),
             tun_enabled: true,
             tun_adapters: vec!["throne-tun".into()],
@@ -95,6 +99,35 @@ pub fn data_path(file: &str) -> PathBuf {
     base.join("KillSwitch").join(file)
 }
 
+fn compile_filters<'a>(patterns: impl IntoIterator<Item = &'a String>) -> Result<RegexSet, regex::Error> {
+    RegexSetBuilder::new(patterns).case_insensitive(true).build()
+}
+
+pub fn is_valid_filter(pattern: &str) -> bool {
+    !pattern.is_empty() && compile_filters([&pattern.to_owned()]).is_ok()
+}
+
+/// Compiled form of `Config::site_filters`, rebuilt only when the patterns change.
+#[derive(Default)]
+pub struct HostFilter {
+    patterns: Vec<String>,
+    compiled: Option<RegexSet>,
+}
+
+impl HostFilter {
+    pub fn update(&mut self, patterns: &[String]) {
+        if self.patterns != patterns {
+            self.patterns = patterns.to_vec();
+            // Settings edited by hand may hold a broken pattern; it must not disable the others.
+            self.compiled = compile_filters(patterns.iter().filter(|pattern| is_valid_filter(pattern))).ok();
+        }
+    }
+
+    pub fn excludes(&self, host: &str) -> bool {
+        self.compiled.as_ref().is_some_and(|set| set.is_match(host))
+    }
+}
+
 /// Reduces a typed address or pasted URL to its bare domain. Non-ASCII domains must be given in punycode.
 pub fn normalize_site(input: &str) -> Option<String> {
     let lowered = input.trim().to_lowercase();
@@ -118,7 +151,43 @@ pub fn is_vpn_client(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, normalize_site};
+    use super::{Config, HostFilter, is_valid_filter, normalize_site};
+
+    fn filter(patterns: &[&str]) -> HostFilter {
+        let mut filter = HostFilter::default();
+        filter.update(&patterns.iter().map(|pattern| (*pattern).to_owned()).collect::<Vec<_>>());
+        filter
+    }
+
+    #[test]
+    fn filters_match_keywords_and_anchored_patterns() {
+        let filter = filter(&["ads", r"^cdn\.", r"\.ru$"]);
+        assert!(filter.excludes("my-ads-server.example.com"));
+        assert!(filter.excludes("ADS.example.com"));
+        assert!(filter.excludes("cdn.example.com"));
+        assert!(filter.excludes("example.ru"));
+        assert!(!filter.excludes("static.cdn.example.com"));
+        assert!(!filter.excludes("example.com"));
+    }
+
+    #[test]
+    fn no_filters_exclude_nothing() {
+        assert!(!filter(&[]).excludes("example.com"));
+    }
+
+    #[test]
+    fn a_broken_pattern_does_not_disable_the_others() {
+        let filter = filter(&["(unclosed", "ads"]);
+        assert!(filter.excludes("ads.example.com"));
+        assert!(!filter.excludes("example.com"));
+    }
+
+    #[test]
+    fn invalid_or_empty_patterns_are_refused() {
+        assert!(is_valid_filter(r"^ads\."));
+        assert!(!is_valid_filter("(unclosed"));
+        assert!(!is_valid_filter(""));
+    }
 
     #[test]
     fn settings_from_older_versions_still_load() {

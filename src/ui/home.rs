@@ -1,7 +1,7 @@
 use super::theme::{self, Palette};
 use super::widgets::{self, Glyph, Row, Trailing, section};
 use super::{App, Page, View};
-use crate::config::{Config, TrustedNetwork};
+use crate::config::{Config, HostFilter, TrustedNetwork};
 use crate::i18n::{Language, Strings};
 use crate::platform::autostart;
 use crate::protection::monitor::Status;
@@ -51,8 +51,11 @@ impl App {
 
         egui::ScrollArea::vertical().id_salt("home").auto_shrink(false).show(ui, |ui| {
             self.apps_section(ui, view, config);
-            if sites_section(ui, view, config) {
+            let action = sites_section(ui, view, config, &self.host_filter);
+            if action.add {
                 self.open_add_site();
+            } else if action.filters {
+                self.open_site_filters(Page::Home);
             }
             networks_section(ui, view, config);
             self.general_section(ui, view, config);
@@ -144,27 +147,37 @@ impl App {
     }
 }
 
-/// Returns true when the user asked to add a site.
-fn sites_section(ui: &mut Ui, view: View<'_>, config: &mut Config) -> bool {
+#[derive(Default)]
+struct SitesAction {
+    add: bool,
+    filters: bool,
+}
+
+fn sites_section(ui: &mut Ui, view: View<'_>, config: &mut Config, filter: &HostFilter) -> SitesAction {
     let (palette, text) = (&view.palette, view.text);
     let mut remove = None;
-    let mut add = false;
+    let mut action = SitesAction::default();
     section(ui, palette, Some(text.sites), Some(text.sites_footer), |group| {
         for (index, site) in config.sites.iter().enumerate() {
             let mut row = Row::new(site, site, Trailing::Remove);
-            if view.status.unresolved_sites.contains(site) {
+            if filter.excludes(site) {
+                row = row.subtitle(text.site_filtered, palette.secondary);
+            } else if view.status.unresolved_sites.contains(site) {
                 row = row.subtitle(text.site_unresolved, palette.orange);
             }
             if group.row(row).trailing_clicked {
                 remove = Some(index);
             }
         }
-        add = group.row(Row::new("add-site", text.add_site, Trailing::None).action(palette.accent)).clicked;
+        action.add = group.row(Row::new("add-site", text.add_site, Trailing::None).action(palette.accent)).clicked;
+        let count = config.site_filters.len().to_string();
+        let trailing = Trailing::Chevron { value: Some((&count, palette.secondary)) };
+        action.filters = group.row(Row::new("site-filters", text.site_filters, trailing)).clicked;
     });
     if let Some(index) = remove {
         config.sites.remove(index);
     }
-    add
+    action
 }
 
 fn networks_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {

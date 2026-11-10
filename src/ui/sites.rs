@@ -79,30 +79,39 @@ impl App {
         }
 
         let nav = widgets::nav_bar(ui, palette, text.scan_title, text.back, Some(text.done));
+        let filter = &self.host_filter;
         let mut toggled = None;
-        egui::ScrollArea::vertical().id_salt("scan").auto_shrink(false).show(ui, |ui| match &scan.found {
-            None => widgets::footnote(ui, text.scan_running, palette.secondary),
-            Some(found) if found.subdomains.is_empty() && found.services.is_empty() => {
+        let mut open_filters = false;
+        egui::ScrollArea::vertical().id_salt("scan").auto_shrink(false).show(ui, |ui| {
+            let count = config.site_filters.len().to_string();
+            section(ui, palette, None, None, |group| {
+                let trailing = Trailing::Chevron { value: Some((&count, palette.secondary)) };
+                open_filters = group.row(Row::new("site-filters", text.site_filters, trailing)).clicked;
+            });
+            let Some(found) = &scan.found else {
+                widgets::footnote(ui, text.scan_running, palette.secondary);
+                return;
+            };
+            let visible = |hosts: &'_ [String]| hosts.iter().filter(|host| !filter.excludes(host)).cloned().collect::<Vec<_>>();
+            let (subdomains, services) = (visible(&found.subdomains), visible(&found.services));
+            if subdomains.is_empty() && services.is_empty() {
                 widgets::footnote(ui, text.scan_nothing, palette.secondary);
             }
-            Some(found) => {
-                for (title, footer, hosts) in [
-                    (text.scan_subdomains, None, &found.subdomains),
-                    (text.scan_services, Some(text.scan_services_footer), &found.services),
-                ] {
-                    if hosts.is_empty() {
-                        continue;
-                    }
-                    section(ui, palette, Some(title), footer, |group| {
-                        for host in hosts {
-                            if group.row(Row::new(host, host, Trailing::Check(scan.selected.contains(host)))).clicked {
-                                toggled = Some(host.clone());
-                            }
-                        }
-                    });
+            for (title, footer, hosts) in
+                [(text.scan_subdomains, None, &subdomains), (text.scan_services, Some(text.scan_services_footer), &services)]
+            {
+                if hosts.is_empty() {
+                    continue;
                 }
-                ui.add_space(20.0);
+                section(ui, palette, Some(title), footer, |group| {
+                    for host in hosts {
+                        if group.row(Row::new(host, host, Trailing::Check(scan.selected.contains(host)))).clicked {
+                            toggled = Some(host.clone());
+                        }
+                    }
+                });
             }
+            ui.add_space(20.0);
         });
         if let Some(host) = toggled
             && !scan.selected.remove(&host)
@@ -110,11 +119,69 @@ impl App {
             scan.selected.insert(host);
         }
         if nav.done {
-            config.sites.extend(std::mem::take(&mut scan.selected));
+            config.sites.extend(std::mem::take(&mut scan.selected).into_iter().filter(|host| !filter.excludes(host)));
         }
         if nav.back || nav.done {
             self.scan = None;
             self.page = Page::Home;
+        } else if open_filters {
+            self.open_site_filters(Page::SiteScan);
+        }
+    }
+
+    pub(super) fn open_site_filters(&mut self, back: Page) {
+        self.search.clear();
+        self.notice = None;
+        self.filters_back = back;
+        self.page = Page::SiteFilters;
+    }
+
+    pub(super) fn site_filters_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
+        let (palette, text) = (&view.palette, view.text);
+        let nav = widgets::nav_bar(ui, palette, text.site_filters, text.back, Some(text.done));
+        ui.add_space(6.0);
+        let field = widgets::text_field(ui, palette, &mut self.search, r"ads|^cdn\.");
+        let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+        widgets::footnote(ui, text.site_filters_footer, palette.secondary);
+
+        let pattern = self.search.trim().to_owned();
+        let mut leave = nav.back;
+        if (nav.done || submitted) && !pattern.is_empty() {
+            if config::is_valid_filter(&pattern) {
+                if !config.site_filters.contains(&pattern) {
+                    config.site_filters.push(pattern);
+                }
+                self.search.clear();
+                self.notice = None;
+                field.request_focus();
+                leave = nav.done;
+            } else {
+                self.notice = Some(text.site_filter_invalid.to_owned());
+            }
+        } else if nav.done {
+            leave = true;
+        }
+        self.show_notice(ui, view);
+
+        let mut remove = None;
+        egui::ScrollArea::vertical().id_salt("filters").auto_shrink(false).show(ui, |ui| {
+            if config.site_filters.is_empty() {
+                return;
+            }
+            section(ui, palette, None, None, |group| {
+                for (index, pattern) in config.site_filters.iter().enumerate() {
+                    if group.row(Row::new(pattern, pattern, Trailing::Remove)).trailing_clicked {
+                        remove = Some(index);
+                    }
+                }
+            });
+        });
+        if let Some(index) = remove {
+            config.site_filters.remove(index);
+        }
+        if leave {
+            self.notice = None;
+            self.page = self.filters_back;
         }
     }
 }

@@ -3,7 +3,7 @@
 use super::exit_watch::ExitWatch;
 use super::rules::{self, Reason};
 use super::site_watch::SiteWatch;
-use crate::config::Config;
+use crate::config::{Config, HostFilter};
 use crate::i18n;
 use crate::platform::firewall::{self, Plan};
 use crate::platform::network::{self, Snapshot};
@@ -136,6 +136,7 @@ pub fn run(shared: Arc<Shared>) {
     subscribe();
     let exits = ExitWatch::spawn(wake);
     let site_watch = SiteWatch::spawn(wake);
+    let mut host_filter = HostFilter::default();
     let mut announcer = Announcer::default();
     let mut applied: Option<Plan> = None;
     let mut firewall_error = None;
@@ -146,8 +147,13 @@ pub fn run(shared: Arc<Shared>) {
         snapshot.exit_ip = exits.observe(rules::exit_route(&config, &snapshot));
         let reasons = rules::evaluate(&config, &snapshot);
         let must_block = config.enabled && !reasons.is_empty();
-        let watched: &[String] = if config.enabled { &config.sites } else { &[] };
-        let sites = site_watch.observe(watched, must_block);
+        host_filter.update(&config.site_filters);
+        let watched: Vec<String> = if config.enabled {
+            config.sites.iter().filter(|site| !host_filter.excludes(site)).cloned().collect()
+        } else {
+            Vec::new()
+        };
+        let sites = site_watch.observe(&watched, must_block);
         let ipv6_guarded = config.enabled && !must_block && rules::ipv6_bypasses_tunnel(&config, &snapshot);
         let desired = if must_block {
             Plan { apps: config.apps.clone(), sites: sites.addresses, exempt: sites.exempt, ..Plan::default() }

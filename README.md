@@ -25,6 +25,7 @@ English · [Русский](README.ru.md)
 - **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
 - **Choose the sites.** Listed domains become unreachable from every app except your VPN client while protection is blocking.
 - **Finds related addresses.** When you add a site, KillSwitch reads it through the VPN and offers its subdomains and the services it uses.
+- **Exclusions.** Regular expressions keep unwanted domains out of the search results and out of blocking. A plain word matches anywhere in the domain.
 - **Allowed servers.** Optionally, apps and sites go offline when the VPN moves to a server you haven't allowed. Servers can be given names.
 - **Notifications and a banner.** Windows notifications say when apps are cut off or back online, and a banner appears over an offline app while it's in front.
 - **IPv6 leak guard.** If IPv6 would go around the tunnel, it's turned off for the selected apps.

@@ -9,7 +9,7 @@ mod tray;
 mod vpn;
 mod widgets;
 
-use crate::config::{self, Config};
+use crate::config::{self, Config, HostFilter};
 use crate::i18n::{self, Strings};
 use crate::platform::apps::{self, RunningApp};
 use crate::protection::monitor::{Shared, Status};
@@ -53,6 +53,7 @@ enum Page {
     AddApps,
     AddSite,
     SiteScan,
+    SiteFilters,
     ServerName,
     Language,
 }
@@ -76,6 +77,9 @@ struct App {
     editing_server: Option<IpAddr>,
     scan: Option<sites::Scan>,
     start_hidden: bool,
+    host_filter: HostFilter,
+    /// Where the exclusions page returns to.
+    filters_back: Page,
 }
 
 impl App {
@@ -103,6 +107,8 @@ impl App {
             editing_server: None,
             scan: None,
             start_hidden,
+            host_filter: HostFilter::default(),
+            filters_back: Page::Home,
         }
     }
 
@@ -182,6 +188,7 @@ impl eframe::App for App {
         let status = self.shared.status.lock().unwrap().clone();
         let mut config = self.shared.config.lock().unwrap().clone();
         let before = config.clone();
+        self.host_filter.update(&config.site_filters);
         let view = View { palette: theme::palette(ctx.theme()), text: i18n::strings(config.language), status: &status };
 
         let page_frame = Frame::new().fill(view.palette.background).inner_margin(Margin::symmetric(18, 6));
@@ -191,6 +198,7 @@ impl eframe::App for App {
             Page::AddApps => self.add_apps_page(ui, view, &mut config),
             Page::AddSite => self.add_site_page(ui, view, &mut config),
             Page::SiteScan => self.site_scan_page(ui, view, &mut config),
+            Page::SiteFilters => self.site_filters_page(ui, view, &mut config),
             Page::ServerName => self.server_name_page(ui, view, &mut config),
             Page::Language => self.language_page(ui, view, &mut config),
         });
