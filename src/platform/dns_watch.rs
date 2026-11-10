@@ -37,7 +37,7 @@ fn properties() -> Properties {
 }
 
 fn read_wide(data: &[u8]) -> Option<(String, &[u8])> {
-    let units: Vec<u16> = data.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).take_while(|unit| *unit != 0).collect();
+    let units: Vec<u16> = data.as_chunks::<2>().0.iter().map(|pair| u16::from_le_bytes(*pair)).take_while(|unit| *unit != 0).collect();
     let consumed = (units.len() + 1) * 2;
     (consumed <= data.len()).then(|| (String::from_utf16_lossy(&units), &data[consumed..]))
 }
