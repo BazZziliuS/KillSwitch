@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Per-app internet kill switch for Windows"
 repository = "https://github.com/BazZziliuS/KillSwitch"
+license = "PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }

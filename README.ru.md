@@ -10,6 +10,7 @@
 [![Downloads](https://img.shields.io/github/downloads/BazZziliuS/KillSwitch/total)](https://github.com/BazZziliuS/KillSwitch/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 ![Rust](https://img.shields.io/badge/Rust-2024-CE422B?logo=rust)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
 
 [English](README.md) · Русский
 
@@ -93,6 +94,10 @@ cargo build --release
 | `src/platform` | API Windows: фильтрация, состояние сети, запущенные приложения |
 | `src/ui` | Окно, экраны, виджеты и значок в трее |
 | `src/i18n.rs` | Все тексты интерфейса |
+
+## Лицензия
+
+[PolyForm Noncommercial 1.0.0](LICENSE). Бесплатно для личного и другого некоммерческого использования. Коммерческое использование запрещено.
 
 ---
 

@@ -10,6 +10,7 @@ Selected apps lose internet the moment your VPN drops or you join a network you 
 [![Downloads](https://img.shields.io/github/downloads/BazZziliuS/KillSwitch/total)](https://github.com/BazZziliuS/KillSwitch/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 ![Rust](https://img.shields.io/badge/Rust-2024-CE422B?logo=rust)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
 
 English · [Русский](README.ru.md)
 
@@ -93,6 +94,10 @@ Settings are stored in `%APPDATA%\KillSwitch\config.json`.
 | `src/platform` | Windows APIs: filtering, network state, running apps |
 | `src/ui` | Window, pages, widgets and tray icon |
 | `src/i18n.rs` | All interface text |
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE). Free for personal and other noncommercial use. Commercial use is not permitted.
 
 ---
 
