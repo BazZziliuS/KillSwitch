@@ -1,7 +1,9 @@
 //! Pure decision logic: from configuration and observed network state to block reasons.
 
+use super::exit_watch::Route;
 use crate::config::Config;
 use crate::platform::network::Snapshot;
+use std::net::IpAddr;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Reason {
@@ -9,6 +11,8 @@ pub enum Reason {
     UntrustedNetwork(String),
     VpnOff,
     DetectionFailed(String),
+    ForeignServer(IpAddr),
+    ServerUnknown,
 }
 
 /// Windows names a new adapter "throne-tun 2" while a stale instance still holds the plain name.
@@ -30,6 +34,19 @@ pub fn tun_active(config: &Config, snapshot: &Snapshot) -> bool {
     })
 }
 
+/// How to reach the internet through the VPN for the server check; `None` when there is nothing to check.
+pub fn exit_route(config: &Config, snapshot: &Snapshot) -> Option<Route> {
+    if !config.server_check {
+        None
+    } else if config.tun_enabled && tun_active(config, snapshot) {
+        snapshot.route_interface.map(Route::Tunnel)
+    } else if config.proxy_enabled && snapshot.proxy.active() {
+        snapshot.proxy.server.clone().map(Route::Proxy)
+    } else {
+        None
+    }
+}
+
 /// Every reason the protected applications must be offline right now; empty means they may connect.
 pub fn evaluate(config: &Config, snapshot: &Snapshot) -> Vec<Reason> {
     let mut reasons: Vec<Reason> = snapshot.errors.iter().cloned().map(Reason::DetectionFailed).collect();
@@ -44,6 +61,12 @@ pub fn evaluate(config: &Config, snapshot: &Snapshot) -> Vec<Reason> {
     let vpn_on = (config.tun_enabled && tun_active(config, snapshot)) || (config.proxy_enabled && snapshot.proxy.active());
     if !vpn_on {
         reasons.push(Reason::VpnOff);
+    } else if config.server_check {
+        match snapshot.exit_ip {
+            Some(address) if config.allowed_servers.contains(&address) => {}
+            Some(address) => reasons.push(Reason::ForeignServer(address)),
+            None => reasons.push(Reason::ServerUnknown),
+        }
     }
     reasons
 }
@@ -82,6 +105,52 @@ mod tests {
     #[test]
     fn trusted_network_with_tun_is_allowed() {
         assert!(evaluate(&config(), &safe_snapshot()).is_empty());
+    }
+
+    fn checked_config() -> Config {
+        Config { server_check: true, allowed_servers: vec!["203.0.113.1".parse().unwrap()], ..config() }
+    }
+
+    #[test]
+    fn allowed_server_stays_online() {
+        let snapshot = Snapshot { exit_ip: Some("203.0.113.1".parse().unwrap()), ..safe_snapshot() };
+        assert!(evaluate(&checked_config(), &snapshot).is_empty());
+    }
+
+    #[test]
+    fn other_server_blocks() {
+        let address: IpAddr = "198.51.100.9".parse().unwrap();
+        let snapshot = Snapshot { exit_ip: Some(address), ..safe_snapshot() };
+        assert_eq!(evaluate(&checked_config(), &snapshot), [Reason::ForeignServer(address)]);
+    }
+
+    #[test]
+    fn unknown_server_blocks() {
+        assert_eq!(evaluate(&checked_config(), &safe_snapshot()), [Reason::ServerUnknown]);
+    }
+
+    #[test]
+    fn server_is_ignored_unless_the_check_is_on() {
+        let snapshot = Snapshot { exit_ip: Some("198.51.100.9".parse().unwrap()), ..safe_snapshot() };
+        assert!(evaluate(&config(), &snapshot).is_empty());
+        assert_eq!(exit_route(&config(), &snapshot), None);
+    }
+
+    #[test]
+    fn vpn_off_is_reported_instead_of_the_server() {
+        let mut snapshot = safe_snapshot();
+        snapshot.adapters.remove(0);
+        assert_eq!(evaluate(&checked_config(), &snapshot), [Reason::VpnOff]);
+        assert_eq!(exit_route(&checked_config(), &snapshot), None);
+    }
+
+    #[test]
+    fn check_follows_the_tunnel_before_the_proxy() {
+        let mut snapshot = safe_snapshot();
+        snapshot.proxy = Proxy { server: Some("127.0.0.1:2080".into()), local: true, listening: true };
+        assert_eq!(exit_route(&checked_config(), &snapshot), Some(Route::Tunnel(TUN_INDEX)));
+        snapshot.adapters.clear();
+        assert_eq!(exit_route(&checked_config(), &snapshot), Some(Route::Proxy("127.0.0.1:2080".into())));
     }
 
     #[test]

@@ -23,6 +23,8 @@ English · [Русский](README.ru.md)
 ## Features
 
 - **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
+- **Choose the sites.** Listed domains become unreachable from every app except your VPN client while protection is blocking.
+- **Allowed servers.** Optionally, apps and sites go offline when the VPN moves to a server you haven't allowed.
 - **Trusted networks.** On any other network the selected apps go offline, even with the VPN on.
 - **VPN awareness.** Works with TUN mode and system proxy mode in clients such as [Throne](https://github.com/throneproj/Throne) and Happ.
 - **Other tunnels don't count.** Tailscale and similar adapters are not mistaken for your VPN.
@@ -50,16 +52,21 @@ Closing the window keeps KillSwitch running in the tray. Quitting from the app o
 | Connected network isn't trusted | Apps are blocked |
 | No network | Apps are blocked |
 | Every selected VPN mode is off | Apps are blocked |
+| Server check is on and the server isn't allowed or can't be determined | Apps are blocked |
 
 - **TUN** counts as on when the selected adapter is up and the route to the internet goes through it.
 - **System proxy** counts as on when Windows has a proxy set on this computer and something is listening on its port.
 - **Blocking** uses persistent [Windows Filtering Platform](https://learn.microsoft.com/windows/win32/fwp/windows-filtering-platform-start-page) filters keyed to each executable. Unlike firewall rules, these also cover loopback, which is how apps reach a local proxy.
+- **Sites** are blocked by IP address. Addresses are looked up about once a minute while protection is on, and more often during a block, then remembered in `%APPDATA%\KillSwitch\sites.json`.
+- **Server check** is off by default. When on, KillSwitch asks [ipify](https://www.ipify.org) or [icanhazip](https://icanhazip.com) for your public address through the VPN about every 15 seconds and compares it with your allowed list. Those services see only your VPN's address.
 
 ## Known limitations
 
 - Blocking reacts to a change, so a very short leak window exists: near-instant for adapter and route changes, up to 0.3 s when the system proxy is switched off.
 - Only the selected executable is blocked. If an app does its networking in a separate `.exe`, add that one too.
 - While blocked, an app also loses access to `127.0.0.1`.
+- Site blocking works on addresses, so sites sharing a CDN address go offline together, and a site can briefly load from an address not seen yet. Only the domain and its `www` address are covered. Non-Latin domains must be entered in punycode.
+- A server is identified by its public address. If the VPN changes server without restarting the tunnel, the change is noticed at the next check, up to 15 s later. A server with several exit addresses needs each one allowed.
 - KillSwitch doesn't start with Windows yet. Protection only applies while it's running, apart from a block already in place.
 
 ## Command line

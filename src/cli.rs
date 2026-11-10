@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::i18n;
-use crate::platform::{firewall, network};
+use crate::platform::{egress, firewall, network};
 use crate::protection::rules;
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
 use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
@@ -33,7 +33,7 @@ pub fn already_running() -> bool {
 /// Recovery path: lifts blocks left behind when the app is not running.
 pub fn unblock() {
     let strings = i18n::strings(Config::load().language);
-    let text = match firewall::apply(&[]) {
+    let text = match firewall::apply(&firewall::Plan::default()) {
         Ok(_) => HSTRING::from(strings.unblock_done),
         Err(error) => HSTRING::from((strings.unblock_failed)(&error)),
     };
@@ -48,7 +48,14 @@ pub fn print_status() {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED).ok();
     }
     let config = Config::load();
-    let snapshot = network::snapshot();
+    let mut snapshot = network::snapshot();
+    if let Some(route) = rules::exit_route(&config, &snapshot) {
+        match egress::public_ip(route.proxy()) {
+            Ok(address) => snapshot.exit_ip = Some(address),
+            Err(error) => println!("server check failed: {error}"),
+        }
+    }
+    println!("exit address: {:?}", snapshot.exit_ip);
     println!("networks: {:?}", snapshot.networks);
     println!("route interface: {:?}", snapshot.route_interface);
     for adapter in snapshot.adapters.iter().filter(|adapter| adapter.up) {

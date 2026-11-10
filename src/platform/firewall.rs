@@ -3,6 +3,7 @@
 //! Filters are persistent, so a crash or reboot while blocked keeps the applications offline. WFP is used rather than
 //! Windows Firewall rules because firewall rules do not apply to loopback, which is how applications reach a local proxy.
 
+use std::net::IpAddr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,9 +47,18 @@ impl Drop for Engine {
     }
 }
 
-/// Atomically makes `apps` the exact set of blocked applications; an empty slice removes every block.
+/// Everything that must be offline right now. The default value removes every block.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Plan {
+    pub apps: Vec<PathBuf>,
+    pub sites: Vec<IpAddr>,
+    /// VPN clients keep reaching blocked addresses: their server may share an address with a blocked site.
+    pub exempt: Vec<PathBuf>,
+}
+
+/// Atomically makes `plan` the exact set of blocks.
 /// Returns the paths that could not be blocked because the file no longer exists.
-pub fn apply(apps: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+pub fn apply(plan: &Plan) -> Result<Vec<PathBuf>, String> {
     if DRY_RUN.load(Ordering::SeqCst) {
         return Ok(Vec::new());
     }
@@ -63,9 +73,17 @@ pub fn apply(apps: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
         register(&engine)?;
         delete_all(&engine)?;
         let mut missing = Vec::new();
-        for app in apps {
+        for app in &plan.apps {
             if !add_app(&engine, app)? {
                 missing.push(app.clone());
+            }
+        }
+        for address in &plan.sites {
+            add_site(&engine, *address)?;
+        }
+        if !plan.sites.is_empty() {
+            for client in &plan.exempt {
+                exempt_client(&engine, client)?;
             }
         }
         check(FwpmTransactionCommit0(engine.0), "commit WFP transaction")?;
@@ -129,8 +147,46 @@ unsafe fn delete_all(engine: &Engine) -> Result<(), String> {
     Ok(())
 }
 
-/// Returns false when the executable does not exist.
-unsafe fn add_app(engine: &Engine, app: &Path) -> Result<bool, String> {
+/// Inside the sublayer the highest weight decides, so a client's permit outranks a site's block.
+const WEIGHT_SITE_BLOCK: u8 = 1;
+const WEIGHT_CLIENT_PERMIT: u8 = 15;
+
+unsafe fn add_filter(
+    engine: &Engine,
+    label: &str,
+    layer: GUID,
+    condition: &mut FWPM_FILTER_CONDITION0,
+    action: FWP_ACTION_TYPE,
+    weight: Option<u8>,
+) -> Result<(), String> {
+    let mut name = wide(format!("KillSwitch: {label}").as_ref());
+    let mut provider_key = PROVIDER;
+    let mut filter = FWPM_FILTER0 {
+        displayData: FWPM_DISPLAY_DATA0 { name: PWSTR(name.as_mut_ptr()), description: PWSTR::null() },
+        flags: FWPM_FILTER_FLAG_PERSISTENT,
+        providerKey: &mut provider_key,
+        layerKey: layer,
+        subLayerKey: SUBLAYER,
+        numFilterConditions: 1,
+        filterCondition: condition,
+        ..Default::default()
+    };
+    match weight {
+        Some(weight) => {
+            filter.weight.r#type = FWP_UINT8;
+            filter.weight.Anonymous.uint8 = weight;
+        }
+        None => filter.weight.r#type = FWP_EMPTY,
+    }
+    filter.action.r#type = action;
+    check(unsafe { FwpmFilterAdd0(engine.0, &filter, None, None) }, "add WFP filter")
+}
+
+/// Calls `body` with a condition matching the executable. Returns false when the file does not exist.
+unsafe fn with_app_condition(
+    app: &Path,
+    body: impl FnOnce(&mut FWPM_FILTER_CONDITION0) -> Result<(), String>,
+) -> Result<bool, String> {
     if !app.exists() {
         return Ok(false);
     }
@@ -140,7 +196,6 @@ unsafe fn add_app(engine: &Engine, app: &Path) -> Result<bool, String> {
         unsafe { FwpmGetAppIdFromFileName0(PCWSTR(path.as_ptr()), &mut blob) },
         &format!("get app id for {}", app.display()),
     )?;
-
     let mut condition = FWPM_FILTER_CONDITION0 {
         fieldKey: FWPM_CONDITION_ALE_APP_ID,
         matchType: FWP_MATCH_EQUAL,
@@ -149,33 +204,63 @@ unsafe fn add_app(engine: &Engine, app: &Path) -> Result<bool, String> {
             Anonymous: FWP_CONDITION_VALUE0_0 { byteBlob: blob },
         },
     };
-    let mut name = wide(format!("KillSwitch: {}", app.display()).as_ref());
-    let mut provider_key = PROVIDER;
-    let mut result = Ok(true);
-    for layer in [
-        FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-        FWPM_LAYER_ALE_AUTH_CONNECT_V6,
-        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
-        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
-    ] {
-        let mut filter = FWPM_FILTER0 {
-            displayData: FWPM_DISPLAY_DATA0 { name: PWSTR(name.as_mut_ptr()), description: PWSTR::null() },
-            flags: FWPM_FILTER_FLAG_PERSISTENT,
-            providerKey: &mut provider_key,
-            layerKey: layer,
-            subLayerKey: SUBLAYER,
-            numFilterConditions: 1,
-            filterCondition: &mut condition,
-            ..Default::default()
-        };
-        filter.weight.r#type = FWP_EMPTY;
-        filter.action.r#type = FWP_ACTION_BLOCK;
-        if let Err(error) = check(unsafe { FwpmFilterAdd0(engine.0, &filter, None, None) }, "add WFP filter") {
-            result = Err(error);
-            break;
-        }
-    }
+    let result = body(&mut condition);
     let mut memory = blob.cast();
     unsafe { FwpmFreeMemory0(&mut memory) };
-    result
+    result.map(|()| true)
+}
+
+/// Returns false when the executable does not exist.
+unsafe fn add_app(engine: &Engine, app: &Path) -> Result<bool, String> {
+    let label = app.display().to_string();
+    unsafe {
+        with_app_condition(app, |condition| {
+            for layer in [
+                FWPM_LAYER_ALE_AUTH_CONNECT_V4,
+                FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+                FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
+                FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+            ] {
+                add_filter(engine, &label, layer, condition, FWP_ACTION_BLOCK, None)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+unsafe fn exempt_client(engine: &Engine, client: &Path) -> Result<(), String> {
+    let label = format!("allow {}", client.display());
+    unsafe {
+        with_app_condition(client, |condition| {
+            for layer in [FWPM_LAYER_ALE_AUTH_CONNECT_V4, FWPM_LAYER_ALE_AUTH_CONNECT_V6] {
+                add_filter(engine, &label, layer, condition, FWP_ACTION_PERMIT, Some(WEIGHT_CLIENT_PERMIT))?;
+            }
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+
+unsafe fn add_site(engine: &Engine, address: IpAddr) -> Result<(), String> {
+    // Stays alive until the filter is added: the condition only points at it.
+    let mut v6 = FWP_BYTE_ARRAY16::default();
+    let (layer, value) = match address {
+        IpAddr::V4(v4) => (
+            FWPM_LAYER_ALE_AUTH_CONNECT_V4,
+            FWP_CONDITION_VALUE0 { r#type: FWP_UINT32, Anonymous: FWP_CONDITION_VALUE0_0 { uint32: u32::from(v4) } },
+        ),
+        IpAddr::V6(address) => {
+            v6.byteArray16 = address.octets();
+            (
+                FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+                FWP_CONDITION_VALUE0 {
+                    r#type: FWP_BYTE_ARRAY16_TYPE,
+                    Anonymous: FWP_CONDITION_VALUE0_0 { byteArray16: &mut v6 },
+                },
+            )
+        }
+    };
+    let mut condition =
+        FWPM_FILTER_CONDITION0 { fieldKey: FWPM_CONDITION_IP_REMOTE_ADDRESS, matchType: FWP_MATCH_EQUAL, conditionValue: value };
+    unsafe { add_filter(engine, &format!("site {address}"), layer, &mut condition, FWP_ACTION_BLOCK, Some(WEIGHT_SITE_BLOCK)) }
 }

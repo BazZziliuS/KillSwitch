@@ -1,5 +1,6 @@
 //! Read-only view of the machine's network state. Nothing here needs administrator rights.
 
+use std::net::IpAddr;
 use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS};
 use windows::Win32::NetworkManagement::IpHelper::*;
 use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
@@ -51,6 +52,8 @@ pub struct Snapshot {
     pub networks: Vec<Network>,
     pub route_interface: Option<u32>,
     pub proxy: Proxy,
+    /// Public address seen through the VPN; `None` until a recent check has succeeded.
+    pub exit_ip: Option<IpAddr>,
     pub errors: Vec<String>,
 }
 
@@ -75,7 +78,7 @@ pub fn snapshot() -> Snapshot {
     let mut index = 0u32;
     let route_interface =
         (unsafe { GetBestInterface(u32::from_ne_bytes(ROUTE_PROBE), &mut index) } == ERROR_SUCCESS.0).then_some(index);
-    Snapshot { adapters, networks, route_interface, proxy: system_proxy(), errors }
+    Snapshot { adapters, networks, route_interface, proxy: system_proxy(), exit_ip: None, errors }
 }
 
 fn text(buffer: &[u16]) -> String {

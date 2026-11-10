@@ -1,8 +1,10 @@
 //! Background loop that observes the network and applies the outcome to the firewall.
 
+use super::exit_watch::ExitWatch;
 use super::rules::{self, Reason};
+use super::site_watch::SiteWatch;
 use crate::config::Config;
-use crate::platform::firewall;
+use crate::platform::firewall::{self, Plan};
 use crate::platform::network::{self, Snapshot};
 use std::ffi::c_void;
 use std::path::PathBuf;
@@ -25,6 +27,7 @@ pub struct Status {
     pub blocked: bool,
     pub firewall_error: Option<String>,
     pub missing: Vec<PathBuf>,
+    pub unresolved_sites: Vec<String>,
 }
 
 pub struct Shared {
@@ -94,15 +97,24 @@ pub fn run(shared: Arc<Shared>) {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED).ok();
     }
     subscribe();
-    let mut applied: Option<Vec<PathBuf>> = None;
+    let exits = ExitWatch::spawn(wake);
+    let site_watch = SiteWatch::spawn(wake);
+    let mut applied: Option<Plan> = None;
     let mut firewall_error = None;
     let mut missing = Vec::new();
     while !shared.quit.load(Ordering::SeqCst) {
         let config = shared.config.lock().unwrap().clone();
-        let snapshot = network::snapshot();
+        let mut snapshot = network::snapshot();
+        snapshot.exit_ip = exits.observe(rules::exit_route(&config, &snapshot));
         let reasons = rules::evaluate(&config, &snapshot);
         let must_block = config.enabled && !reasons.is_empty();
-        let desired = if must_block { config.apps.clone() } else { Vec::new() };
+        let watched: &[String] = if config.enabled { &config.sites } else { &[] };
+        let sites = site_watch.observe(watched, must_block);
+        let desired = if must_block {
+            Plan { apps: config.apps.clone(), sites: sites.addresses, exempt: sites.exempt }
+        } else {
+            Plan::default()
+        };
         if applied.as_ref() != Some(&desired) {
             match firewall::apply(&desired) {
                 Ok(not_found) => {
@@ -120,9 +132,10 @@ pub fn run(shared: Arc<Shared>) {
             blocked: must_block && firewall_error.is_none(),
             firewall_error: firewall_error.clone(),
             missing: missing.clone(),
+            unresolved_sites: sites.unresolved,
         };
         wait();
     }
-    let code = i32::from(firewall::apply(&[]).is_err());
+    let code = i32::from(firewall::apply(&Plan::default()).is_err());
     std::process::exit(code);
 }

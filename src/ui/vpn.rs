@@ -44,7 +44,53 @@ impl App {
                     }
                 });
             }
+            server_section(ui, view, config);
             ui.add_space(20.0);
         });
+    }
+}
+
+fn server_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {
+    let (palette, text) = (&view.palette, view.text);
+    let current = view.status.snapshot.exit_ip;
+    let mut toggle_current = false;
+    let mut remove = None;
+    section(ui, palette, Some(text.servers), Some(text.servers_footer), |group| {
+        let row = Row::new("server-check", text.server_check, Trailing::Switch { on: config.server_check, enabled: true });
+        if group.row(row).trailing_clicked {
+            config.server_check = !config.server_check;
+        }
+        if !config.server_check {
+            return;
+        }
+        match current {
+            Some(address) => {
+                let allowed = config.allowed_servers.contains(&address);
+                let title = address.to_string();
+                let row = Row::new("server-current", &title, Trailing::Switch { on: allowed, enabled: true })
+                    .subtitle(text.server_current, palette.secondary);
+                toggle_current = group.row(row).trailing_clicked;
+            }
+            None => {
+                group.row(Row::new("server-detecting", text.server_detecting, Trailing::None));
+            }
+        }
+        for (index, address) in config.allowed_servers.iter().enumerate().filter(|(_, address)| Some(**address) != current) {
+            let title = address.to_string();
+            let row = Row::new(&title, &title, Trailing::Remove).subtitle(text.server_allowed, palette.secondary);
+            if group.row(row).trailing_clicked {
+                remove = Some(index);
+            }
+        }
+    });
+    if toggle_current && let Some(address) = current {
+        if config.allowed_servers.contains(&address) {
+            config.allowed_servers.retain(|entry| *entry != address);
+        } else {
+            config.allowed_servers.push(address);
+        }
+    }
+    if let Some(index) = remove {
+        config.allowed_servers.remove(index);
     }
 }

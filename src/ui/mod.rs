@@ -2,6 +2,7 @@ mod add_apps;
 mod catalog;
 mod home;
 mod language;
+mod sites;
 mod theme;
 mod tray;
 mod vpn;
@@ -47,6 +48,7 @@ enum Page {
     Home,
     Vpn,
     AddApps,
+    AddSite,
     Language,
 }
 
@@ -165,6 +167,7 @@ impl eframe::App for App {
             Page::Home => self.home_page(ui, view, &mut config),
             Page::Vpn => self.vpn_page(ui, view, &mut config),
             Page::AddApps => self.add_apps_page(ui, view, &mut config),
+            Page::AddSite => self.add_site_page(ui, view, &mut config),
             Page::Language => self.language_page(ui, view, &mut config),
         });
         self.quit_alert(&ctx, view);

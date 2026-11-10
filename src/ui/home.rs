@@ -40,6 +40,9 @@ impl App {
 
         egui::ScrollArea::vertical().id_salt("home").auto_shrink(false).show(ui, |ui| {
             self.apps_section(ui, view, config);
+            if sites_section(ui, view, config) {
+                self.open_add_site();
+            }
             networks_section(ui, view, config);
 
             let (label, color) = vpn_summary(palette, text, config, status);
@@ -103,6 +106,29 @@ impl App {
             self.open_add_apps();
         }
     }
+}
+
+/// Returns true when the user asked to add a site.
+fn sites_section(ui: &mut Ui, view: View<'_>, config: &mut Config) -> bool {
+    let (palette, text) = (&view.palette, view.text);
+    let mut remove = None;
+    let mut add = false;
+    section(ui, palette, Some(text.sites), Some(text.sites_footer), |group| {
+        for (index, site) in config.sites.iter().enumerate() {
+            let mut row = Row::new(site, site, Trailing::Remove);
+            if view.status.unresolved_sites.contains(site) {
+                row = row.subtitle(text.site_unresolved, palette.orange);
+            }
+            if group.row(row).trailing_clicked {
+                remove = Some(index);
+            }
+        }
+        add = group.row(Row::new("add-site", text.add_site, Trailing::None).action(palette.accent)).clicked;
+    });
+    if let Some(index) = remove {
+        config.sites.remove(index);
+    }
+    add
 }
 
 fn networks_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {
@@ -213,12 +239,14 @@ fn explain(reason: &Reason, text: &Strings) -> String {
         Reason::UntrustedNetwork(name) => (text.reason_untrusted)(name),
         Reason::VpnOff => text.reason_vpn_off.to_owned(),
         Reason::DetectionFailed(_) => text.reason_detection_failed.to_owned(),
+        Reason::ForeignServer(address) => (text.reason_foreign_server)(&address.to_string()),
+        Reason::ServerUnknown => text.reason_server_unknown.to_owned(),
     }
 }
 
 fn requirements(config: &Config, text: &Strings) -> Option<String> {
     let mut steps = Vec::new();
-    if config.apps.is_empty() {
+    if config.apps.is_empty() && config.sites.is_empty() {
         steps.push(text.step_add_app);
     }
     if config.trusted.is_empty() {
@@ -226,6 +254,9 @@ fn requirements(config: &Config, text: &Strings) -> Option<String> {
     }
     if !config.tun_enabled && !config.proxy_enabled {
         steps.push(text.step_enable_mode);
+    }
+    if config.server_check && config.allowed_servers.is_empty() {
+        steps.push(text.step_allow_server);
     }
     (!steps.is_empty() && !config.enabled).then(|| (text.to_enable)(&steps.join(text.step_separator)))
 }
