@@ -1,0 +1,16 @@
+[package]
+name = "KillSwitch"
+version = "0.1.0"
+edition = "2024"
+description = "Per-app internet kill switch for Windows"
+repository = "https://github.com/BazZziliuS/KillSwitch"
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }
+raw-window-handle = "0.6.2"
+rfd = "0.18.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
+tray-icon = "0.26.1"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Com", "Win32_System_Rpc", "Win32_System_Registry", "Win32_System_Console", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Networking_NetworkListManager", "Win32_Networking_WinSock", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_Globalization"] }

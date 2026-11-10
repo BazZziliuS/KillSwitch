@@ -1,0 +1,146 @@
+//! Pure decision logic: from configuration and observed network state to block reasons.
+
+use crate::config::Config;
+use crate::platform::network::Snapshot;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Reason {
+    NoNetwork,
+    UntrustedNetwork(String),
+    VpnOff,
+    DetectionFailed(String),
+}
+
+/// Windows names a new adapter "throne-tun 2" while a stale instance still holds the plain name.
+pub fn adapter_matches(alias: &str, configured: &str) -> bool {
+    let alias = alias.to_lowercase();
+    let configured = configured.to_lowercase();
+    match alias.strip_prefix(&configured) {
+        Some("") => true,
+        Some(rest) => rest.strip_prefix(' ').is_some_and(|number| number.parse::<u16>().is_ok()),
+        None => false,
+    }
+}
+
+pub fn tun_active(config: &Config, snapshot: &Snapshot) -> bool {
+    snapshot.adapters.iter().any(|adapter| {
+        adapter.up
+            && snapshot.route_interface == Some(adapter.index)
+            && config.tun_adapters.iter().any(|name| adapter_matches(&adapter.name, name))
+    })
+}
+
+/// Every reason the protected applications must be offline right now; empty means they may connect.
+pub fn evaluate(config: &Config, snapshot: &Snapshot) -> Vec<Reason> {
+    let mut reasons: Vec<Reason> = snapshot.errors.iter().cloned().map(Reason::DetectionFailed).collect();
+    if snapshot.networks.is_empty() && snapshot.errors.is_empty() {
+        reasons.push(Reason::NoNetwork);
+    }
+    for network in &snapshot.networks {
+        if !config.trusted.iter().any(|trusted| trusted.id == network.id) {
+            reasons.push(Reason::UntrustedNetwork(network.name.clone()));
+        }
+    }
+    let vpn_on = (config.tun_enabled && tun_active(config, snapshot)) || (config.proxy_enabled && snapshot.proxy.active());
+    if !vpn_on {
+        reasons.push(Reason::VpnOff);
+    }
+    reasons
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::TrustedNetwork;
+    use crate::platform::network::{Adapter, Network, Proxy};
+    use windows::core::GUID;
+
+    const TUN_INDEX: u32 = 8;
+    const TAILSCALE_INDEX: u32 = 7;
+
+    fn adapter(name: &str, index: u32) -> Adapter {
+        Adapter { name: name.into(), description: String::new(), index, guid: GUID::zeroed(), up: true, hardware: false }
+    }
+
+    fn config() -> Config {
+        Config {
+            enabled: true,
+            trusted: vec![TrustedNetwork { id: "home".into(), name: "Home".into() }],
+            ..Config::default()
+        }
+    }
+
+    fn safe_snapshot() -> Snapshot {
+        Snapshot {
+            adapters: vec![adapter("throne-tun", TUN_INDEX), adapter("Tailscale", TAILSCALE_INDEX)],
+            networks: vec![Network { id: "home".into(), name: "Home".into() }],
+            route_interface: Some(TUN_INDEX),
+            ..Snapshot::default()
+        }
+    }
+
+    #[test]
+    fn trusted_network_with_tun_is_allowed() {
+        assert!(evaluate(&config(), &safe_snapshot()).is_empty());
+    }
+
+    #[test]
+    fn untrusted_network_blocks_even_with_vpn_on() {
+        let mut snapshot = safe_snapshot();
+        snapshot.networks.push(Network { id: "cafe".into(), name: "Cafe".into() });
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::UntrustedNetwork("Cafe".into())]);
+    }
+
+    #[test]
+    fn tun_adapter_removed_blocks() {
+        let mut snapshot = safe_snapshot();
+        snapshot.adapters.remove(0);
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::VpnOff]);
+    }
+
+    #[test]
+    fn tun_present_without_route_blocks() {
+        let mut snapshot = safe_snapshot();
+        snapshot.route_interface = Some(15);
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::VpnOff]);
+    }
+
+    #[test]
+    fn other_tunnel_does_not_count_as_vpn() {
+        let mut snapshot = safe_snapshot();
+        snapshot.route_interface = Some(TAILSCALE_INDEX);
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::VpnOff]);
+    }
+
+    #[test]
+    fn local_proxy_counts_only_while_allowed_and_listening() {
+        let mut snapshot = safe_snapshot();
+        snapshot.adapters.clear();
+        snapshot.proxy = Proxy { server: Some("127.0.0.1:2080".into()), local: true, listening: true };
+        assert!(evaluate(&config(), &snapshot).is_empty());
+
+        let tun_only = Config { proxy_enabled: false, ..config() };
+        assert_eq!(evaluate(&tun_only, &snapshot), [Reason::VpnOff]);
+
+        snapshot.proxy.listening = false;
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::VpnOff]);
+    }
+
+    #[test]
+    fn no_network_and_detection_errors_block() {
+        let mut snapshot = safe_snapshot();
+        snapshot.networks.clear();
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::NoNetwork]);
+
+        snapshot.errors.push("boom".into());
+        assert_eq!(evaluate(&config(), &snapshot), [Reason::DetectionFailed("boom".into())]);
+    }
+
+    #[test]
+    fn adapter_alias_follows_windows_numbering() {
+        assert!(adapter_matches("throne-tun", "throne-tun"));
+        assert!(adapter_matches("Throne-TUN 2", "throne-tun"));
+        assert!(!adapter_matches("throne-tunnel", "throne-tun"));
+        assert!(!adapter_matches("throne-tun x", "throne-tun"));
+    }
+}

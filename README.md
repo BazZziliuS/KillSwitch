@@ -1,0 +1,99 @@
+<div align="center">
+
+# KillSwitch
+
+**Per-app internet kill switch for Windows.**
+Selected apps lose internet the moment your VPN drops or you join a network you don't trust.
+
+[![CI](https://img.shields.io/github/actions/workflow/status/BazZziliuS/KillSwitch/ci.yml?branch=main&label=CI)](https://github.com/BazZziliuS/KillSwitch/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/BazZziliuS/KillSwitch?include_prereleases&label=release)](https://github.com/BazZziliuS/KillSwitch/releases)
+[![Downloads](https://img.shields.io/github/downloads/BazZziliuS/KillSwitch/total)](https://github.com/BazZziliuS/KillSwitch/releases)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
+![Rust](https://img.shields.io/badge/Rust-2024-CE422B?logo=rust)
+
+English · [Русский](README.ru.md)
+
+| Protected | Apps cut off | Off |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/en/protected.png" width="250" alt="Protected state"> | <img src="docs/screenshots/en/blocked.png" width="250" alt="Apps cut off"> | <img src="docs/screenshots/en/off.png" width="250" alt="Protection off"> |
+
+</div>
+
+> [!WARNING]
+> This is an early pre-release and has not been audited. Blocking has not yet had real-world testing, so check it on your own setup before relying on it.
+
+## Features
+
+- **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
+- **Trusted networks.** On any other network the selected apps go offline, even with the VPN on.
+- **VPN awareness.** Works with TUN mode and system proxy mode in clients such as [Throne](https://github.com/throneproj/Throne) and Happ.
+- **Other tunnels don't count.** Tailscale and similar adapters are not mistaken for your VPN.
+- **Automatic recovery.** Internet returns by itself once the conditions are met again.
+- **Fails closed.** If the network state can't be read, the apps are blocked. A block survives a crash or reboot.
+- **Lives in the tray.** The tray icon shows the current state at a glance.
+- **English and Russian.** Follows the Windows display language, or choose one in the app.
+
+## Getting started
+
+1. Download `KillSwitch-windows-x64.exe` from [Releases](https://github.com/BazZziliuS/KillSwitch/releases) and run it. Windows will ask for administrator rights, which are required to manage network filters.
+2. Add the apps to protect.
+3. Mark your current network as trusted.
+4. Turn on **Protection**.
+
+If your VPN's TUN adapter isn't recognized, enable TUN in the VPN client and select the adapter under **VPN → Modes**. Throne's `throne-tun` adapter is selected by default.
+
+Closing the window keeps KillSwitch running in the tray. Quitting from the app or the tray menu lifts all blocks.
+
+## How it works
+
+| Condition | Result |
+| --- | --- |
+| Trusted network and VPN on | Apps are online |
+| Connected network isn't trusted | Apps are blocked |
+| No network | Apps are blocked |
+| Every selected VPN mode is off | Apps are blocked |
+
+- **TUN** counts as on when the selected adapter is up and the route to the internet goes through it.
+- **System proxy** counts as on when Windows has a proxy set on this computer and something is listening on its port.
+- **Blocking** uses persistent [Windows Filtering Platform](https://learn.microsoft.com/windows/win32/fwp/windows-filtering-platform-start-page) filters keyed to each executable. Unlike firewall rules, these also cover loopback, which is how apps reach a local proxy.
+
+## Known limitations
+
+- Blocking reacts to a change, so a very short leak window exists: near-instant for adapter and route changes, up to 0.3 s when the system proxy is switched off.
+- Only the selected executable is blocked. If an app does its networking in a separate `.exe`, add that one too.
+- While blocked, an app also loses access to `127.0.0.1`.
+- KillSwitch doesn't start with Windows yet. Protection only applies while it's running, apart from a block already in place.
+
+## Command line
+
+| Option | Purpose |
+| --- | --- |
+| `--unblock` | Remove all blocks left behind while the app isn't running |
+| `--status` | Print detected networks, adapters and block reasons, without admin rights |
+| `--dry-run` | Run the full app without admin rights and without writing any filter |
+
+## Building from source
+
+Requires Windows and a recent stable Rust toolchain.
+
+```sh
+cargo test
+cargo build --release
+```
+
+The binary is written to `target/release/KillSwitch.exe`.
+
+Settings are stored in `%APPDATA%\KillSwitch\config.json`.
+
+### Project layout
+
+| Path | Contents |
+| --- | --- |
+| `src/protection` | Block rules and the background monitor |
+| `src/platform` | Windows APIs: filtering, network state, running apps |
+| `src/ui` | Window, pages, widgets and tray icon |
+| `src/i18n.rs` | All interface text |
+
+---
+
+Not affiliated with Throne or Happ.

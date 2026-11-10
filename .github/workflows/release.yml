@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable && rustup default stable
+      - run: cargo test
+      - run: cargo build --release
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cp target/release/KillSwitch.exe KillSwitch-windows-x64.exe
+          sha256sum KillSwitch-windows-x64.exe > KillSwitch-windows-x64.exe.sha256
+          flags=()
+          # 0.x releases are published as pre-releases.
+          if [[ "$TAG" == v0.* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}" --title "KillSwitch $TAG" \
+            --notes "Windows x64 build. Download \`KillSwitch-windows-x64.exe\` and run it; Windows will ask for administrator rights. See the README for usage and known limitations." \
+            KillSwitch-windows-x64.exe KillSwitch-windows-x64.exe.sha256
