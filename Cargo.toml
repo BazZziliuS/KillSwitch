@@ -1,6 +1,6 @@
 [package]
 name = "KillSwitch"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 description = "Per-app internet kill switch for Windows"
 repository = "https://github.com/BazZziliuS/KillSwitch"
@@ -18,4 +18,4 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
 tray-icon = "0.26.1"
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Com", "Win32_System_Rpc", "Win32_System_Registry", "Win32_System_Console", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Networking_NetworkListManager", "Win32_Networking_WinHttp", "Win32_Networking_WinSock","Win32_Graphics_Dwm", "Win32_Graphics_Gdi","Win32_Storage_FileSystem", "Win32_Globalization", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "UI_Notifications", "Data_Xml_Dom"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Com", "Win32_System_Rpc", "Win32_System_Registry", "Win32_System_Console", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Networking_NetworkListManager", "Win32_Networking_WinHttp", "Win32_Networking_WinSock","Win32_Graphics_Dwm", "Win32_Graphics_Gdi","Win32_Storage_FileSystem", "Win32_Globalization", "Win32_System_LibraryLoader", "Win32_System_Diagnostics_Etw", "Win32_System_Time", "Win32_UI_HiDpi", "UI_Notifications", "Data_Xml_Dom"] }

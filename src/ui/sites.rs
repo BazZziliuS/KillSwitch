@@ -25,8 +25,14 @@ impl App {
             let filter = &self.host_filter;
             section(ui, palette, None, Some(text.sites_footer), |group| {
                 for (index, site) in config.sites.iter().enumerate() {
+                    let is_pattern = config::is_pattern(site);
+                    let learned = view.status.pattern_addresses.get(site).copied().unwrap_or(0);
+                    let pattern_label =
+                        if view.status.pattern_watch_failed { text.pattern_unavailable.to_owned() } else { (text.site_pattern)(learned) };
                     let mut row = Row::new(site, site, Trailing::Remove);
-                    if filter.excludes(site) {
+                    if is_pattern {
+                        row = row.subtitle(&pattern_label, palette.secondary);
+                    } else if filter.excludes(site) {
                         row = row.subtitle(text.site_filtered, palette.secondary);
                     } else if view.status.unresolved_sites.contains(site) {
                         row = row.subtitle(text.site_unresolved, palette.orange);
@@ -68,15 +74,28 @@ impl App {
             self.notice = None;
         }
         ui.add_space(6.0);
-        let field = widgets::text_field(ui, palette, &mut self.search, "example.com");
+        let field = widgets::text_field(ui, palette, &mut self.search, "example.com, *inst*");
         let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
         widgets::footnote(ui, text.add_site_footer, palette.secondary);
         self.show_notice(ui, view);
 
         if nav.done || submitted {
-            match config::normalize_site(&self.search) {
-                Some(site) => self.add_site(view, config, site),
-                None => self.notice = Some(text.site_invalid.to_owned()),
+            if config::is_pattern(&self.search) {
+                match config::normalize_pattern(&self.search) {
+                    Some(pattern) => {
+                        if !config.sites.contains(&pattern) {
+                            config.sites.push(pattern);
+                        }
+                        self.notice = None;
+                        self.page = Page::Sites;
+                    }
+                    None => self.notice = Some(text.pattern_invalid.to_owned()),
+                }
+            } else {
+                match config::normalize_site(&self.search) {
+                    Some(site) => self.add_site(view, config, site),
+                    None => self.notice = Some(text.site_invalid.to_owned()),
+                }
             }
         }
     }

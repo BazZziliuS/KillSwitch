@@ -3,11 +3,12 @@
 use super::exit_watch::ExitWatch;
 use super::rules::{self, Reason};
 use super::site_watch::SiteWatch;
-use crate::config::{Config, HostFilter};
+use crate::config::{Config, HostFilter, is_pattern};
 use crate::i18n;
 use crate::platform::firewall::{self, Plan};
 use crate::platform::network::{self, Snapshot};
-use crate::platform::notify;
+use crate::platform::{dns_watch, notify};
+use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -32,6 +33,8 @@ pub struct Status {
     pub firewall_error: Option<String>,
     pub missing: Vec<PathBuf>,
     pub unresolved_sites: Vec<String>,
+    pub pattern_addresses: BTreeMap<String, usize>,
+    pub pattern_watch_failed: bool,
     pub ipv6_guarded: bool,
 }
 
@@ -149,11 +152,11 @@ pub fn run(shared: Arc<Shared>) {
         let must_block = config.enabled && !reasons.is_empty();
         host_filter.update(&config.site_filters);
         let watched: Vec<String> = if config.enabled {
-            config.sites.iter().filter(|site| !host_filter.excludes(site)).cloned().collect()
+            config.sites.iter().filter(|site| is_pattern(site) || !host_filter.excludes(site)).cloned().collect()
         } else {
             Vec::new()
         };
-        let sites = site_watch.observe(&watched, must_block);
+        let sites = site_watch.observe(&watched, &config.site_filters, must_block);
         let ipv6_guarded = config.enabled && !must_block && rules::ipv6_bypasses_tunnel(&config, &snapshot);
         let desired = if must_block {
             Plan { apps: config.apps.clone(), sites: sites.addresses, exempt: sites.exempt, ..Plan::default() }
@@ -198,10 +201,13 @@ pub fn run(shared: Arc<Shared>) {
             firewall_error: firewall_error.clone(),
             missing: missing.clone(),
             unresolved_sites: sites.unresolved,
+            pattern_addresses: sites.pattern_addresses,
+            pattern_watch_failed: sites.pattern_watch_failed,
             ipv6_guarded: ipv6_guarded && firewall_error.is_none(),
         };
         wait();
     }
+    dns_watch::stop();
     let code = i32::from(firewall::apply(&Plan::default()).is_err());
     std::process::exit(code);
 }

@@ -3,8 +3,8 @@
 //! Answers accumulate and are saved to disk: when the VPN drops DNS may fail or return different addresses, and a block
 //! has to work from what was learned earlier.
 
-use crate::config;
-use crate::platform::apps;
+use crate::config::{self, HostFilter};
+use crate::platform::{apps, dns_watch};
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, ToSocketAddrs};
 use std::path::PathBuf;
@@ -16,6 +16,8 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const BLOCKED_INTERVAL: Duration = Duration::from_secs(15);
 const RETRY_INTERVAL: Duration = Duration::from_secs(10);
 const MAX_PER_SITE: usize = 64;
+/// A pattern covers many domains, each with its own addresses.
+const MAX_PER_PATTERN: usize = 512;
 const CACHE_FILE: &str = "sites.json";
 
 type Known = BTreeMap<String, BTreeSet<IpAddr>>;
@@ -23,10 +25,12 @@ type Known = BTreeMap<String, BTreeSet<IpAddr>>;
 #[derive(Default)]
 struct State {
     sites: Vec<String>,
+    filters: Vec<String>,
     blocking: bool,
     generation: u64,
     known: Known,
     exempt: Vec<PathBuf>,
+    watch_failed: bool,
 }
 
 #[derive(Default)]
@@ -34,6 +38,9 @@ pub struct SiteView {
     pub addresses: Vec<IpAddr>,
     pub exempt: Vec<PathBuf>,
     pub unresolved: Vec<String>,
+    /// How many addresses each pattern has collected so far.
+    pub pattern_addresses: BTreeMap<String, usize>,
+    pub pattern_watch_failed: bool,
 }
 
 type Cell = (Mutex<State>, Condvar);
@@ -46,13 +53,16 @@ impl SiteWatch {
         let cell: Arc<Cell> = Arc::new((Mutex::new(state), Condvar::new()));
         let worker = cell.clone();
         std::thread::spawn(move || run(&worker, on_change));
+        let pattern_worker = cell.clone();
+        std::thread::spawn(move || run_pattern_watch(pattern_worker, on_change));
         Self(cell)
     }
 
-    pub fn observe(&self, sites: &[String], blocking: bool) -> SiteView {
+    pub fn observe(&self, sites: &[String], filters: &[String], blocking: bool) -> SiteView {
         let mut state = self.0.0.lock().unwrap();
-        if state.sites != sites || state.blocking != blocking {
+        if state.sites != sites || state.filters != filters || state.blocking != blocking {
             state.sites = sites.to_vec();
+            state.filters = filters.to_vec();
             state.blocking = blocking;
             state.generation += 1;
             self.0.1.notify_all();
@@ -62,7 +72,13 @@ impl SiteWatch {
         SiteView {
             addresses: addresses.into_iter().collect(),
             exempt: state.exempt.clone(),
-            unresolved: sites.iter().filter(|site| !state.known.contains_key(*site)).cloned().collect(),
+            unresolved: sites.iter().filter(|site| !config::is_pattern(site) && !state.known.contains_key(*site)).cloned().collect(),
+            pattern_addresses: sites
+                .iter()
+                .filter(|site| config::is_pattern(site))
+                .map(|site| (site.clone(), state.known.get(site).map_or(0, BTreeSet::len)))
+                .collect(),
+            pattern_watch_failed: state.watch_failed,
         }
     }
 }
@@ -73,14 +89,15 @@ fn run((state, changed): &Cell, on_change: fn()) {
         let (sites, generation, blocking) = (guard.sites.clone(), guard.generation, guard.blocking);
         drop(guard);
 
-        let answers: Vec<(String, Vec<IpAddr>)> = sites.into_iter().map(|site| { let found = lookup(&site); (site, found) }).collect();
+        let answers: Vec<(String, Vec<IpAddr>)> =
+            sites.into_iter().filter(|site| !config::is_pattern(site)).map(|site| { let found = lookup(&site); (site, found) }).collect();
         let complete = answers.iter().all(|(_, found)| !found.is_empty());
         let exempt = vpn_clients();
 
         let mut guard = state.lock().unwrap();
         let mut changed_known = false;
         for (site, found) in answers {
-            changed_known |= merge(guard.known.entry(site).or_default(), found);
+            changed_known |= merge(guard.known.entry(site).or_default(), found, MAX_PER_SITE);
         }
         let current = guard.sites.clone();
         guard.known.retain(|site, addresses| current.contains(site) && !addresses.is_empty());
@@ -101,12 +118,48 @@ fn run((state, changed): &Cell, on_change: fn()) {
     }
 }
 
+/// Starts watching DNS lookups once the first pattern exists, so that nothing is traced for people who don't use them.
+fn run_pattern_watch(cell: Arc<Cell>, on_change: fn()) {
+    drop(cell.1.wait_while(cell.0.lock().unwrap(), |state| !state.sites.iter().any(|site| config::is_pattern(site))).unwrap());
+    let learner = cell.clone();
+    let filter = Mutex::new(HostFilter::default());
+    let result = dns_watch::run(Box::new(move |name, addresses| learn(&learner, &filter, on_change, name, addresses)));
+    if result.is_err() {
+        cell.0.lock().unwrap().watch_failed = true;
+        on_change();
+    }
+}
+
+fn learn(cell: &Cell, filter: &Mutex<HostFilter>, on_change: fn(), name: &str, addresses: Vec<IpAddr>) {
+    let addresses: Vec<IpAddr> = addresses.into_iter().filter(|address| is_public(*address)).collect();
+    if addresses.is_empty() {
+        return;
+    }
+    let mut state = cell.0.lock().unwrap();
+    let mut filter = filter.lock().unwrap();
+    filter.update(&state.filters);
+    if filter.excludes(name) {
+        return;
+    }
+    let matching: Vec<String> =
+        state.sites.iter().filter(|site| config::is_pattern(site) && config::pattern_matches(site, name)).cloned().collect();
+    let mut learned = false;
+    for pattern in matching {
+        learned |= merge(state.known.entry(pattern).or_default(), addresses.clone(), MAX_PER_PATTERN);
+    }
+    if learned {
+        save(&state.known);
+        drop(state);
+        on_change();
+    }
+}
+
 /// Returns whether anything new was learned. A site on a rotating CDN restarts from its latest answer at the cap.
-fn merge(known: &mut BTreeSet<IpAddr>, found: Vec<IpAddr>) -> bool {
+fn merge(known: &mut BTreeSet<IpAddr>, found: Vec<IpAddr>, cap: usize) -> bool {
     let before = known.len();
-    if found.iter().filter(|address| !known.contains(*address)).count() + known.len() > MAX_PER_SITE {
+    if found.iter().collect::<BTreeSet<_>>().into_iter().filter(|address| !known.contains(*address)).count() + known.len() > cap {
         known.clear();
-        known.extend(found.into_iter().take(MAX_PER_SITE));
+        known.extend(found.into_iter().take(cap));
         return true;
     }
     known.extend(found);
@@ -191,9 +244,9 @@ mod tests {
     fn merge_accumulates_and_reports_news() {
         let (a, b): (IpAddr, IpAddr) = ("1.1.1.1".parse().unwrap(), "8.8.8.8".parse().unwrap());
         let mut known = BTreeSet::new();
-        assert!(merge(&mut known, vec![a]));
-        assert!(!merge(&mut known, vec![a]));
-        assert!(merge(&mut known, vec![b]));
+        assert!(merge(&mut known, vec![a], MAX_PER_SITE));
+        assert!(!merge(&mut known, vec![a], MAX_PER_SITE));
+        assert!(merge(&mut known, vec![b], MAX_PER_SITE));
         assert_eq!(known.len(), 2);
     }
 
@@ -201,7 +254,7 @@ mod tests {
     fn merge_restarts_at_the_cap() {
         let mut known: BTreeSet<IpAddr> = (0..MAX_PER_SITE as u32).map(|n| IpAddr::V4((0x0100_0000 + n).into())).collect();
         let fresh: IpAddr = "9.9.9.9".parse().unwrap();
-        assert!(merge(&mut known, vec![fresh]));
+        assert!(merge(&mut known, vec![fresh], MAX_PER_SITE));
         assert_eq!(known.into_iter().collect::<Vec<_>>(), [fresh]);
     }
 }

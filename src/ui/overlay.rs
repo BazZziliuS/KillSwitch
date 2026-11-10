@@ -15,7 +15,7 @@ use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SetThreadDpiAwarenessContext};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{PWSTR, w};
 
@@ -333,6 +333,18 @@ fn target(shared: &Shared) -> Option<(RECT, String, String)> {
     }
 }
 
+/// The scale of the monitor the app is on; the banner may still be on another one, or be drawn for the first time.
+fn monitor_dpi(app: &RECT) -> i32 {
+    let (mut x, mut y) = (0u32, 0u32);
+    unsafe {
+        let monitor = MonitorFromRect(app, MONITOR_DEFAULTTONEAREST);
+        if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y).is_err() {
+            return BASE_DPI;
+        }
+    }
+    (x as i32).max(BASE_DPI)
+}
+
 struct Banner {
     hwnd: HWND,
     shown: Option<(Content, (i32, i32))>,
@@ -340,7 +352,7 @@ struct Banner {
 
 impl Banner {
     fn show(&mut self, app: RECT, title: String, reason: String) {
-        let dpi = (unsafe { GetDpiForWindow(self.hwnd) } as i32).max(BASE_DPI);
+        let dpi = monitor_dpi(&app);
         let content = Content { title, reason, dark: is_dark_mode(), dpi, app_width: app.right - app.left };
         let size = match &self.shown {
             Some((shown, size)) if *shown == content => Some(*size),
@@ -370,6 +382,8 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
 
 pub fn run(shared: Arc<Shared>) {
     unsafe {
+        // This thread can create its window before the UI has made the process DPI-aware, which would leave it unscaled.
+        let _ = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let Ok(module) = GetModuleHandleW(None) else { return };
         let instance = HINSTANCE(module.0);
         let class = w!("KillSwitchOverlay");

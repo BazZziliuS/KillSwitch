@@ -2,6 +2,7 @@
 
 pub mod apps;
 pub mod autostart;
+pub mod dns_watch;
 pub mod egress;
 pub mod firewall;
 pub mod network;

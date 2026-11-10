@@ -25,6 +25,7 @@ English · [Русский](README.ru.md)
 - **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
 - **Choose the sites.** Listed domains become unreachable from every app except your VPN client while protection is blocking.
 - **Finds related addresses.** When you add a site, KillSwitch reads it through the VPN and offers its subdomains and the services it uses.
+- **Patterns.** An entry such as `*inst*` covers every domain containing those letters, in any zone. Its addresses are learned from Windows DNS client events as apps use those domains.
 - **Exclusions.** Regular expressions keep unwanted domains out of the search results and out of blocking. A plain word matches anywhere in the domain.
 - **Allowed servers.** Optionally, apps and sites go offline when the VPN moves to a server you haven't allowed. Servers can be given names.
 - **Notifications and a banner.** Windows notifications say when apps are cut off or back online, and a banner appears over an offline app while it's in front.
@@ -76,6 +77,7 @@ Closing the window keeps KillSwitch running in the tray. Quitting from the app o
 - Protection only applies while KillSwitch is running, apart from a block already in place. Turn on **Start with Windows** to cover logon.
 - The search for related addresses reads a site's page and scripts as text and runs no code, so hosts computed in JavaScript at run time aren't found.
 - The banner can't appear over games in exclusive fullscreen.
+- A pattern can only block addresses it has already seen. A domain first looked up during a block can get through once, because the app receives the address as KillSwitch learns it. Apps with their own DNS over HTTPS bypass the Windows DNS client and aren't seen at all.
 
 ## Command line
 

@@ -128,6 +128,33 @@ impl HostFilter {
     }
 }
 
+/// A site entry such as `*inst*`: `*` stands for any characters, dots included.
+pub fn is_pattern(site: &str) -> bool {
+    site.contains('*')
+}
+
+/// Patterns need enough literal text not to match nearly every domain.
+pub fn normalize_pattern(input: &str) -> Option<String> {
+    const MIN_LITERAL: usize = 3;
+    let pattern = input.trim().to_lowercase();
+    let valid = pattern.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'*'));
+    let literal = pattern.bytes().filter(|byte| *byte != b'*').count();
+    (valid && is_pattern(&pattern) && literal >= MIN_LITERAL).then_some(pattern)
+}
+
+pub fn pattern_matches(pattern: &str, host: &str) -> bool {
+    let mut parts = pattern.split('*');
+    let first = parts.next().unwrap_or_default();
+    let Some(mut rest) = host.strip_prefix(first) else { return false };
+    let mut middle: Vec<&str> = parts.collect();
+    let last = middle.pop().unwrap_or_default();
+    for part in middle {
+        let Some(found) = rest.find(part) else { return false };
+        rest = &rest[found + part.len()..];
+    }
+    rest.ends_with(last)
+}
+
 /// Reduces a typed address or pasted URL to its bare domain. Non-ASCII domains must be given in punycode.
 pub fn normalize_site(input: &str) -> Option<String> {
     let lowered = input.trim().to_lowercase();
@@ -151,7 +178,30 @@ pub fn is_vpn_client(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, HostFilter, is_valid_filter, normalize_site};
+    use super::{Config, HostFilter, is_valid_filter, normalize_pattern, normalize_site, pattern_matches};
+
+    #[test]
+    fn patterns_match_any_subdomain_or_zone() {
+        for host in ["instagram.com", "www.instagram.com", "scontent.cdninstagram.com", "instagram.co.uk"] {
+            assert!(pattern_matches("*inst*", host), "{host}");
+        }
+        assert!(!pattern_matches("*inst*", "example.com"));
+        assert!(pattern_matches("*.example.*", "a.example.org"));
+        assert!(!pattern_matches("*.example.*", "example.org"));
+        assert!(pattern_matches("inst*", "instagram.com"));
+        assert!(!pattern_matches("inst*", "myinstagram.com"));
+        assert!(pattern_matches("*.ru", "example.ru"));
+        assert!(!pattern_matches("*.ru", "example.ru.com"));
+        assert!(!pattern_matches("abc*abc", "abc"));
+    }
+
+    #[test]
+    fn patterns_need_real_text() {
+        assert_eq!(normalize_pattern(" *INST* ").as_deref(), Some("*inst*"));
+        for input in ["*", "**", "*a*", "*in st*", "inst", "https://*inst*/"] {
+            assert_eq!(normalize_pattern(input), None, "{input}");
+        }
+    }
 
     fn filter(patterns: &[&str]) -> HostFilter {
         let mut filter = HostFilter::default();
