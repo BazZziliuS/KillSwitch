@@ -20,9 +20,6 @@ English · [Русский](README.ru.md)
 
 </div>
 
-> [!WARNING]
-> This is an early pre-release and has not been audited. Blocking has not yet had real-world testing, so check it on your own setup before relying on it.
-
 ## Features
 
 - **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
