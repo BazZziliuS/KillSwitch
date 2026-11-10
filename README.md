@@ -46,7 +46,7 @@ English · [Русский](README.ru.md)
 3. Mark your current network as trusted.
 4. Turn on **Protection**.
 
-If your VPN's TUN adapter isn't recognized, enable TUN in the VPN client and select the adapter under **VPN → Modes**. Throne's `throne-tun` adapter is selected by default.
+If your VPN's TUN adapter isn't recognized, enable TUN in the VPN client and select the adapter on the **VPN** tab. Throne's `throne-tun` adapter is selected by default.
 
 Closing the window keeps KillSwitch running in the tray. Quitting from the app or the tray menu lifts all blocks.
 

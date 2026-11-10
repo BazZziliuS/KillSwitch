@@ -64,6 +64,10 @@ pub fn footnote() -> FontId {
     FontId::proportional(12.5)
 }
 
+pub fn tab_label() -> FontId {
+    FontId::proportional(11.0)
+}
+
 pub fn headline() -> FontId {
     FontId::new(15.0, FontFamily::Name(SEMIBOLD.into()))
 }

@@ -10,9 +10,7 @@ const MAX_SERVER_NAME: usize = 40;
 impl App {
     pub(super) fn vpn_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
         let (palette, text, status) = (&view.palette, view.text, view.status);
-        if widgets::nav_bar(ui, palette, text.vpn_modes, text.back, None).back {
-            self.page = Page::Home;
-        }
+        widgets::page_title(ui, palette, "VPN");
         egui::ScrollArea::vertical().id_salt("vpn").auto_shrink(false).show(ui, |ui| {
             let tun_on = rules::tun_active(config, &status.snapshot);
             let proxy = &status.snapshot.proxy;
@@ -55,7 +53,7 @@ impl App {
                 self.editing_server = Some(address);
                 self.page = Page::ServerName;
             }
-            ui.add_space(20.0);
+            ui.add_space(widgets::TAB_BAR_CLEARANCE);
         });
     }
 

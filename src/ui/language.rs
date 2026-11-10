@@ -8,7 +8,7 @@ impl App {
     pub(super) fn language_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
         let (palette, text) = (&view.palette, view.text);
         if widgets::nav_bar(ui, palette, text.language, text.back, None).back {
-            self.page = Page::Home;
+            self.page = Page::Settings;
         }
         section(ui, palette, None, None, |group| {
             if group.row(Row::new("system", text.system_language, Trailing::Check(config.language.is_none()))).clicked {

@@ -15,6 +15,45 @@ pub(super) struct Scan {
 }
 
 impl App {
+    pub(super) fn sites_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
+        let (palette, text) = (&view.palette, view.text);
+        widgets::page_title(ui, palette, text.sites);
+        self.show_notice(ui, view);
+        egui::ScrollArea::vertical().id_salt("sites").auto_shrink(false).show(ui, |ui| {
+            let mut remove = None;
+            let (mut add, mut filters) = (false, false);
+            let filter = &self.host_filter;
+            section(ui, palette, None, Some(text.sites_footer), |group| {
+                for (index, site) in config.sites.iter().enumerate() {
+                    let mut row = Row::new(site, site, Trailing::Remove);
+                    if filter.excludes(site) {
+                        row = row.subtitle(text.site_filtered, palette.secondary);
+                    } else if view.status.unresolved_sites.contains(site) {
+                        row = row.subtitle(text.site_unresolved, palette.orange);
+                    }
+                    if group.row(row).trailing_clicked {
+                        remove = Some(index);
+                    }
+                }
+                add = group.row(Row::new("add-site", text.add_site, Trailing::None).action(palette.accent)).clicked;
+            });
+            section(ui, palette, None, None, |group| {
+                let count = config.site_filters.len().to_string();
+                let trailing = Trailing::Chevron { value: Some((&count, palette.secondary)) };
+                filters = group.row(Row::new("site-filters", text.site_filters, trailing)).clicked;
+            });
+            if let Some(index) = remove {
+                config.sites.remove(index);
+            }
+            if add {
+                self.open_add_site();
+            } else if filters {
+                self.open_site_filters(Page::Sites);
+            }
+            ui.add_space(widgets::TAB_BAR_CLEARANCE);
+        });
+    }
+
     pub(super) fn open_add_site(&mut self) {
         self.search.clear();
         self.notice = None;
@@ -25,7 +64,7 @@ impl App {
         let (palette, text) = (&view.palette, view.text);
         let nav = widgets::nav_bar(ui, palette, text.add_site, text.back, Some(text.done));
         if nav.back {
-            self.page = Page::Home;
+            self.page = Page::Sites;
             self.notice = None;
         }
         ui.add_space(6.0);
@@ -49,7 +88,7 @@ impl App {
         // Without the VPN the search itself would expose the visit the user wants protected.
         let Some(route) = rules::vpn_route(config, &view.status.snapshot) else {
             self.notice = Some(view.text.scan_needs_vpn.to_owned());
-            self.page = Page::Home;
+            self.page = Page::Sites;
             return;
         };
         let result = Arc::new(Mutex::new(None));
@@ -66,7 +105,7 @@ impl App {
     pub(super) fn site_scan_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
         let (palette, text) = (&view.palette, view.text);
         let Some(scan) = &mut self.scan else {
-            self.page = Page::Home;
+            self.page = Page::Sites;
             return;
         };
         if scan.found.is_none()
@@ -123,7 +162,7 @@ impl App {
         }
         if nav.back || nav.done {
             self.scan = None;
-            self.page = Page::Home;
+            self.page = Page::Sites;
         } else if open_filters {
             self.open_site_filters(Page::SiteScan);
         }

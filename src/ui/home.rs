@@ -1,11 +1,8 @@
-use super::theme::{self, Palette};
+use super::theme;
 use super::widgets::{self, Glyph, Row, Trailing, section};
-use super::{App, Page, View};
-use crate::config::{Config, HostFilter, TrustedNetwork};
-use crate::i18n::{Language, Strings};
-use crate::platform::autostart;
-use crate::protection::monitor::Status;
-use crate::protection::rules;
+use super::{App, View};
+use crate::config::{Config, TrustedNetwork};
+use crate::i18n::Strings;
 use crate::updates;
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
@@ -22,7 +19,7 @@ struct Hero {
 
 impl App {
     pub(super) fn home_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
-        let (palette, text, status) = (&view.palette, view.text, view.status);
+        let (palette, text) = (&view.palette, view.text);
 
         // The status and the main switch stay pinned so a long list can never hide why the internet is off.
         if let Some(network) = paint_hero(ui, view, hero_state(view, config)) {
@@ -51,71 +48,9 @@ impl App {
 
         egui::ScrollArea::vertical().id_salt("home").auto_shrink(false).show(ui, |ui| {
             self.apps_section(ui, view, config);
-            let action = sites_section(ui, view, config, &self.host_filter);
-            if action.add {
-                self.open_add_site();
-            } else if action.filters {
-                self.open_site_filters(Page::Home);
-            }
             networks_section(ui, view, config);
-            self.general_section(ui, view, config);
-
-            let (label, color) = vpn_summary(palette, text, config, status);
-            let language = config.language.map_or(text.system_language, Language::native_name);
-            let mut target = None;
-            section(ui, palette, Some("VPN"), None, |group| {
-                let trailing = Trailing::Chevron { value: Some((label, color)) };
-                if group.row(Row::new("vpn", text.modes, trailing)).clicked {
-                    target = Some(Page::Vpn);
-                }
-            });
-            section(ui, palette, None, None, |group| {
-                let trailing = Trailing::Chevron { value: Some((language, palette.secondary)) };
-                if group.row(Row::new("language", text.language, trailing)).clicked {
-                    target = Some(Page::Language);
-                }
-            });
-            if let Some(page) = target {
-                self.page = page;
-            }
-
-            ui.add_space(22.0);
-            ui.vertical_centered(|ui| {
-                let label = RichText::new(text.quit_app).font(theme::callout()).color(palette.secondary);
-                if ui.add(egui::Label::new(label).sense(Sense::click())).clicked() {
-                    if config.enabled {
-                        self.confirm_quit = true;
-                    } else {
-                        self.shared.quit();
-                    }
-                }
-            });
-            ui.add_space(20.0);
+            ui.add_space(widgets::TAB_BAR_CLEARANCE);
         });
-    }
-
-    fn general_section(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
-        let (palette, text) = (&view.palette, view.text);
-        let mut toggle_autostart = false;
-        section(ui, palette, Some(text.general), None, |group| {
-            let switch = |on| Trailing::Switch { on, enabled: true };
-            toggle_autostart = group.row(Row::new("autostart", text.autostart, switch(config.autostart))).trailing_clicked;
-            if group.row(Row::new("notifications", text.notifications, switch(config.notifications))).trailing_clicked {
-                config.notifications = !config.notifications;
-            }
-            if group.row(Row::new("overlay", text.overlay, switch(config.overlay))).trailing_clicked {
-                config.overlay = !config.overlay;
-            }
-            if group.row(Row::new("update-check", text.update_check, switch(config.update_check))).trailing_clicked {
-                config.update_check = !config.update_check;
-            }
-        });
-        if toggle_autostart {
-            match autostart::set(!config.autostart) {
-                Ok(()) => config.autostart = !config.autostart,
-                Err(error) => self.notice = Some((text.autostart_failed)(&error)),
-            }
-        }
     }
 
     fn apps_section(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
@@ -145,39 +80,6 @@ impl App {
             self.open_add_apps();
         }
     }
-}
-
-#[derive(Default)]
-struct SitesAction {
-    add: bool,
-    filters: bool,
-}
-
-fn sites_section(ui: &mut Ui, view: View<'_>, config: &mut Config, filter: &HostFilter) -> SitesAction {
-    let (palette, text) = (&view.palette, view.text);
-    let mut remove = None;
-    let mut action = SitesAction::default();
-    section(ui, palette, Some(text.sites), Some(text.sites_footer), |group| {
-        for (index, site) in config.sites.iter().enumerate() {
-            let mut row = Row::new(site, site, Trailing::Remove);
-            if filter.excludes(site) {
-                row = row.subtitle(text.site_filtered, palette.secondary);
-            } else if view.status.unresolved_sites.contains(site) {
-                row = row.subtitle(text.site_unresolved, palette.orange);
-            }
-            if group.row(row).trailing_clicked {
-                remove = Some(index);
-            }
-        }
-        action.add = group.row(Row::new("add-site", text.add_site, Trailing::None).action(palette.accent)).clicked;
-        let count = config.site_filters.len().to_string();
-        let trailing = Trailing::Chevron { value: Some((&count, palette.secondary)) };
-        action.filters = group.row(Row::new("site-filters", text.site_filters, trailing)).clicked;
-    });
-    if let Some(index) = remove {
-        config.sites.remove(index);
-    }
-    action
 }
 
 fn networks_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {
@@ -297,14 +199,4 @@ fn requirements(config: &Config, text: &Strings) -> Option<String> {
         steps.push(text.step_allow_server);
     }
     (!steps.is_empty() && !config.enabled).then(|| (text.to_enable)(&steps.join(text.step_separator)))
-}
-
-fn vpn_summary(palette: &Palette, text: &'static Strings, config: &Config, status: &Status) -> (&'static str, Color32) {
-    if config.tun_enabled && rules::tun_active(config, &status.snapshot) {
-        ("TUN", palette.green)
-    } else if config.proxy_enabled && status.snapshot.proxy.active() {
-        (text.proxy_short, palette.green)
-    } else {
-        (text.off, palette.secondary)
-    }
 }

@@ -3,6 +3,7 @@ mod catalog;
 mod home;
 mod language;
 pub mod overlay;
+mod settings;
 mod sites;
 mod theme;
 mod tray;
@@ -14,7 +15,7 @@ use crate::i18n::{self, Strings};
 use crate::platform::apps::{self, RunningApp};
 use crate::protection::monitor::{Shared, Status};
 use catalog::Catalog;
-use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, Rect, RichText, Ui, UiBuilder, Vec2, pos2, vec2};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -22,11 +23,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use theme::Palette;
+use widgets::TabIcon;
 
 const WINDOW_SIZE: [f32; 2] = [420.0, 720.0];
 const WINDOW_ICON_SIZE: u32 = 64;
 const WINDOW_ICON_COLOR: [u8; 3] = [0, 122, 255];
 const REFRESH: Duration = Duration::from_millis(500);
+const PAGE_MARGIN: Vec2 = vec2(18.0, 6.0);
 
 /// `start_hidden` leaves only the tray icon, for starting at logon.
 pub fn run(shared: Arc<Shared>, start_hidden: bool) -> eframe::Result {
@@ -49,13 +52,22 @@ pub fn run(shared: Arc<Shared>, start_hidden: bool) -> eframe::Result {
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
     Home,
+    Sites,
     Vpn,
+    Settings,
     AddApps,
     AddSite,
     SiteScan,
     SiteFilters,
     ServerName,
     Language,
+}
+
+impl Page {
+    /// Tab pages keep the tab bar; every other page is opened on top of them and hides it.
+    fn is_tab(self) -> bool {
+        matches!(self, Page::Home | Page::Sites | Page::Vpn | Page::Settings)
+    }
 }
 
 /// What every page needs to draw itself for the current frame.
@@ -108,7 +120,7 @@ impl App {
             scan: None,
             start_hidden,
             host_filter: HostFilter::default(),
-            filters_back: Page::Home,
+            filters_back: Page::Sites,
         }
     }
 
@@ -191,16 +203,40 @@ impl eframe::App for App {
         self.host_filter.update(&config.site_filters);
         let view = View { palette: theme::palette(ctx.theme()), text: i18n::strings(config.language), status: &status };
 
-        let page_frame = Frame::new().fill(view.palette.background).inner_margin(Margin::symmetric(18, 6));
-        egui::CentralPanel::default().frame(page_frame).show(ui, |ui| match self.page {
-            Page::Home => self.home_page(ui, view, &mut config),
-            Page::Vpn => self.vpn_page(ui, view, &mut config),
-            Page::AddApps => self.add_apps_page(ui, view, &mut config),
-            Page::AddSite => self.add_site_page(ui, view, &mut config),
-            Page::SiteScan => self.site_scan_page(ui, view, &mut config),
-            Page::SiteFilters => self.site_filters_page(ui, view, &mut config),
-            Page::ServerName => self.server_name_page(ui, view, &mut config),
-            Page::Language => self.language_page(ui, view, &mut config),
+        let page_frame = Frame::new().fill(view.palette.background);
+        egui::CentralPanel::default().frame(page_frame).show(ui, |ui| {
+            let full = ui.max_rect();
+            let has_tabs = self.page.is_tab();
+            // Pages run to the window's edge: the tab bar floats over them.
+            let area = Rect::from_min_max(full.min + PAGE_MARGIN, pos2(full.right() - PAGE_MARGIN.x, full.bottom()));
+            let page_ui = &mut ui.new_child(UiBuilder::new().max_rect(area));
+            match self.page {
+                Page::Home => self.home_page(page_ui, view, &mut config),
+                Page::Sites => self.sites_page(page_ui, view, &mut config),
+                Page::Vpn => self.vpn_page(page_ui, view, &mut config),
+                Page::Settings => self.settings_page(page_ui, view, &mut config),
+                Page::AddApps => self.add_apps_page(page_ui, view, &mut config),
+                Page::AddSite => self.add_site_page(page_ui, view, &mut config),
+                Page::SiteScan => self.site_scan_page(page_ui, view, &mut config),
+                Page::SiteFilters => self.site_filters_page(page_ui, view, &mut config),
+                Page::ServerName => self.server_name_page(page_ui, view, &mut config),
+                Page::Language => self.language_page(page_ui, view, &mut config),
+            }
+            if has_tabs {
+                let text = view.text;
+                let tabs = [
+                    (Page::Home, TabIcon::Shield, text.protection),
+                    (Page::Sites, TabIcon::Globe, text.sites),
+                    (Page::Vpn, TabIcon::Lock, "VPN"),
+                    (Page::Settings, TabIcon::Gear, text.settings),
+                ];
+                if let Some(page) = widgets::tab_bar(ui, &view.palette, full, self.page, &tabs)
+                    && page != self.page
+                {
+                    self.page = page;
+                    self.notice = None;
+                }
+            }
         });
         self.quit_alert(&ctx, view);
 
