@@ -1,6 +1,7 @@
 //! Background loop that observes the network and applies the outcome to the firewall.
 
 use super::exit_watch::ExitWatch;
+use super::history::{self, EventKind, History};
 use super::rules::{self, Reason};
 use super::site_watch::SiteWatch;
 use crate::config::{Config, HostFilter, is_pattern};
@@ -72,6 +73,7 @@ pub struct Shared {
     pub status: Mutex<Status>,
     /// Tag of a newer release, once one has been found.
     pub update: Mutex<Option<String>>,
+    pub history: Mutex<History>,
     pub hwnd: AtomicIsize,
     quit: AtomicBool,
 }
@@ -82,6 +84,7 @@ impl Shared {
             config: Mutex::new(config),
             status: Mutex::default(),
             update: Mutex::default(),
+            history: Mutex::new(History::load()),
             hwnd: AtomicIsize::new(0),
             quit: AtomicBool::new(false),
         })
@@ -144,6 +147,8 @@ pub fn run(shared: Arc<Shared>) {
     let mut applied: Option<Plan> = None;
     let mut firewall_error = None;
     let mut missing = Vec::new();
+    let mut was_enabled = shared.config.lock().unwrap().enabled;
+    let mut blocked_since = None;
     while !shared.quit.load(Ordering::SeqCst) {
         let config = shared.config.lock().unwrap().clone();
         let mut snapshot = network::snapshot();
@@ -177,12 +182,32 @@ pub fn run(shared: Arc<Shared>) {
                     firewall_error = None;
                     applied = Some(desired);
                 }
-                Err(error) => firewall_error = Some(error),
+                Err(error) => {
+                    if firewall_error.is_none() {
+                        shared.history.lock().unwrap().record(EventKind::Failed { error: error.clone() });
+                    }
+                    firewall_error = Some(error);
+                }
             }
         }
+        if config.enabled != was_enabled {
+            was_enabled = config.enabled;
+            let kind = if config.enabled { EventKind::Enabled } else { EventKind::Disabled };
+            shared.history.lock().unwrap().record(kind);
+        }
         // A failed block must never be announced as the internet coming back.
-        if firewall_error.is_none()
-            && let Some(blocked) = announcer.tick(must_block, Instant::now())
+        let settled = if firewall_error.is_none() { announcer.tick(must_block, Instant::now()) } else { None };
+        if let Some(blocked) = settled {
+            let kind = if blocked {
+                blocked_since = Some(history::now());
+                EventKind::Blocked { reasons: reasons.clone() }
+            } else {
+                let seconds = blocked_since.take().map_or(0, |since| history::now().saturating_sub(since));
+                EventKind::Restored { seconds }
+            };
+            shared.history.lock().unwrap().record(kind);
+        }
+        if let Some(blocked) = settled
             && config.notifications
         {
             let text = i18n::strings(config.language);

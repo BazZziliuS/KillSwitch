@@ -72,6 +72,10 @@ pub fn headline() -> FontId {
     FontId::new(15.0, FontFamily::Name(SEMIBOLD.into()))
 }
 
+pub fn title_small() -> FontId {
+    FontId::new(19.0, FontFamily::Name(SEMIBOLD.into()))
+}
+
 pub fn title() -> FontId {
     FontId::new(23.0, FontFamily::Name(SEMIBOLD.into()))
 }

@@ -22,7 +22,7 @@ English · [Русский](README.ru.md)
 
 ## Features
 
-- **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection.
+- **Choose the apps.** Pick from what's open or browse to any `.exe`. Everything else keeps its normal connection. A program is remembered by name, so copies of it in different folders appear once, and a copy left behind by an update is replaced.
 - **Choose the sites.** Listed domains become unreachable from every app except your VPN client while protection is blocking.
 - **Finds related addresses.** When you add a site, KillSwitch reads it through the VPN and offers its subdomains and the services it uses.
 - **Patterns.** An entry such as `*inst*` covers every domain containing those letters, in any zone. Its addresses are learned from Windows DNS client events as apps use those domains.
@@ -37,6 +37,8 @@ English · [Русский](README.ru.md)
 - **Other tunnels don't count.** Tailscale and similar adapters are not mistaken for your VPN.
 - **Automatic recovery.** Internet returns by itself once the conditions are met again.
 - **Fails closed.** If the network state can't be read, the apps are blocked. A block survives a crash or reboot.
+- **History.** Every time apps go offline or come back is recorded with the reason and how long it lasted, along with counts of blocks, VPN drops and offline time for the last 7 days.
+- **Status at a glance.** The main screen shows the network, VPN mode and server address, a checklist of what's left before protection can be turned on, and one-click fixes such as trusting the current network or allowing the current server.
 - **Lives in the tray.** The tray icon shows the current state at a glance.
 - **English and Russian.** Follows the Windows display language, or choose one in the app.
 

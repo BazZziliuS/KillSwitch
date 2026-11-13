@@ -27,6 +27,10 @@ pub enum Leading {
     None,
     Image(TextureId),
     Letter(char),
+    /// A setup step: a filled check once done, an empty ring until then.
+    Step(bool),
+    /// A small colored mark, as for an event in the history.
+    Dot(Color32),
 }
 
 #[derive(Clone, Copy)]
@@ -122,6 +126,20 @@ impl Group<'_> {
                     Color32::WHITE,
                 );
                 left += ICON_SIZE + 12.0;
+            }
+            Leading::Step(done) => {
+                let center = icon_rect.center();
+                if done {
+                    painter.circle_filled(center, 10.0, palette.green);
+                    polyline(&painter, &[center + vec2(-4.5, 0.2), center + vec2(-1.2, 3.6), center + vec2(4.8, -3.4)], 1.9, Color32::WHITE);
+                } else {
+                    painter.circle_stroke(center, 9.5, Stroke::new(1.6, palette.tertiary));
+                }
+                left += ICON_SIZE + 8.0;
+            }
+            Leading::Dot(color) => {
+                painter.circle_filled(pos2(left + 5.0, rect.center().y), 5.0, color);
+                left += 22.0;
             }
         }
 
@@ -281,6 +299,28 @@ pub fn section(ui: &mut Ui, palette: &Palette, header: Option<&str>, footer: Opt
     }
 }
 
+/// A card of large figures with captions beneath, side by side.
+pub fn stat_card(ui: &mut Ui, palette: &Palette, header: &str, stats: &[(String, &str, Color32)]) {
+    ui.add_space(20.0);
+    ui.horizontal(|ui| {
+        ui.add_space(ROW_PADDING);
+        ui.label(RichText::new(header).font(theme::footnote()).color(palette.secondary));
+    });
+    ui.add_space(6.0);
+    Frame::new().fill(palette.card).corner_radius(CornerRadius::same(CARD_RADIUS)).inner_margin(egui::Margin::symmetric(4, 14)).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.columns(stats.len(), |columns| {
+            for (column, (value, caption, color)) in columns.iter_mut().zip(stats) {
+                column.vertical_centered(|ui| {
+                    ui.label(RichText::new(value).font(theme::title()).color(*color));
+                    ui.add_space(2.0);
+                    ui.label(RichText::new(*caption).font(theme::footnote()).color(palette.secondary));
+                });
+            }
+        });
+    });
+}
+
 pub fn footnote(ui: &mut Ui, text: &str, color: Color32) {
     ui.add_space(6.0);
     Frame::new().inner_margin(egui::Margin::symmetric(ROW_PADDING as i8, 0)).show(ui, |ui| {
@@ -329,6 +369,7 @@ pub enum TabIcon {
     Shield,
     Globe,
     Lock,
+    Clock,
     Gear,
 }
 
@@ -357,6 +398,10 @@ fn paint_tab_icon(painter: &egui::Painter, icon: TabIcon, center: Pos2, color: C
             polyline(painter, &shackle, 2.0, color);
             polyline(painter, &[center + vec2(-5.0, -4.0), center + vec2(-5.0, -1.5)], 2.0, color);
             polyline(painter, &[center + vec2(5.0, -4.0), center + vec2(5.0, -1.5)], 2.0, color);
+        }
+        TabIcon::Clock => {
+            painter.circle_stroke(center, RADIUS * 0.95, Stroke::new(2.0, color));
+            polyline(painter, &[center + vec2(0.0, -RADIUS * 0.55), center, center + vec2(RADIUS * 0.42, RADIUS * 0.25)], 2.0, color);
         }
         TabIcon::Gear => {
             const TEETH: usize = 8;

@@ -3,9 +3,10 @@
 use super::exit_watch::Route;
 use crate::config::Config;
 use crate::platform::network::Snapshot;
+use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Reason {
     NoNetwork,
     UntrustedNetwork(String),
