@@ -27,6 +27,7 @@ English · [Русский](README.ru.md)
 - **Finds related addresses.** When you add a site, KillSwitch reads it through the VPN and offers its subdomains and the services it uses.
 - **Patterns.** An entry such as `*inst*` covers every domain containing those letters, in any zone. Its addresses are learned from Windows DNS client events as apps use those domains.
 - **Exclusions.** Regular expressions keep unwanted domains out of the search results and out of blocking. A plain word matches anywhere in the domain.
+- **IP and country.** The main screen and the tray tooltip show the public address your traffic leaves through and its country. It's checked only through the VPN, so the services never see your real address. Can be turned off on the **VPN** tab.
 - **Allowed servers.** Optionally, apps and sites go offline when the VPN moves to a server you haven't allowed. Servers can be given names.
 - **Notifications and a banner.** Windows notifications say when apps are cut off or back online, and a banner appears over an offline app while it's in front.
 - **IPv6 leak guard.** If IPv6 would go around the tunnel, it's turned off for the selected apps.
@@ -38,7 +39,7 @@ English · [Русский](README.ru.md)
 - **Automatic recovery.** Internet returns by itself once the conditions are met again.
 - **Fails closed.** If the network state can't be read, the apps are blocked. A block survives a crash or reboot.
 - **History.** Every time apps go offline or come back is recorded with the reason and how long it lasted, along with counts of blocks, VPN drops and offline time for the last 7 days.
-- **Status at a glance.** The main screen shows the network, VPN mode and server address, a checklist of what's left before protection can be turned on, and one-click fixes such as trusting the current network or allowing the current server.
+- **Status at a glance.** The main screen shows the network, VPN mode, public address and its country, a checklist of what's left before protection can be turned on, and one-click fixes such as trusting the current network or allowing the current server.
 - **Lives in the tray.** The tray icon shows the current state at a glance.
 - **English and Russian.** Follows the Windows display language, or choose one in the app.
 
@@ -67,7 +68,8 @@ Closing the window keeps KillSwitch running in the tray. Quitting from the app o
 - **System proxy** counts as on when Windows has a proxy set on this computer and something is listening on its port.
 - **Blocking** uses persistent [Windows Filtering Platform](https://learn.microsoft.com/windows/win32/fwp/windows-filtering-platform-start-page) filters keyed to each executable. Unlike firewall rules, these also cover loopback, which is how apps reach a local proxy.
 - **Sites** are blocked by IP address. Addresses are looked up about once a minute while protection is on, and more often during a block, then remembered in `%APPDATA%\KillSwitch\sites.json`.
-- **Server check** is off by default. When on, KillSwitch asks [ipify](https://www.ipify.org) or [icanhazip](https://icanhazip.com) for your public address through the VPN about every 15 seconds and compares it with your allowed list. Those services see only your VPN's address.
+- **Public address** is checked while the VPN is on: KillSwitch asks [ipify](https://www.ipify.org) or [icanhazip](https://icanhazip.com) through the VPN about every 15 seconds, and [ipwho.is](https://ipwho.is) once per new address for its country. Those services see only your VPN's address, and nothing is asked while the VPN is off. Turn off **Show IP and country** on the **VPN** tab to stop it.
+- **Server check** is off by default. When on, the public address is compared with your allowed list.
 
 ## Known limitations
 
