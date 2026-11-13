@@ -16,6 +16,9 @@ pub struct TrustedNetwork {
 pub struct Config {
     pub enabled: bool,
     pub apps: Vec<PathBuf>,
+    /// Display names of the protected apps, keyed by path text, remembered when an app is added. Versions of one
+    /// program installed in different folders share a name, so they are listed and toggled together.
+    pub app_names: BTreeMap<String, String>,
     /// Domains made unreachable from every app, except VPN clients, while protection is blocking.
     pub sites: Vec<String>,
     /// Regular expressions; a domain matching any of them is neither offered by the site search nor blocked.
@@ -44,6 +47,7 @@ impl Default for Config {
         Self {
             enabled: false,
             apps: Vec::new(),
+            app_names: BTreeMap::new(),
             sites: Vec::new(),
             site_filters: Vec::new(),
             trusted: Vec::new(),
@@ -72,6 +76,33 @@ impl Config {
 
     pub fn server_name(&self, address: IpAddr) -> Option<&str> {
         self.server_names.get(&address.to_string()).map(String::as_str)
+    }
+
+    pub fn app_name(&self, path: &Path) -> Option<&str> {
+        self.app_names.get(&path.to_string_lossy().into_owned()).map(String::as_str)
+    }
+
+    /// Protected paths that belong to the program with this display name.
+    pub fn paths_named(&self, name: &str) -> Vec<PathBuf> {
+        self.apps.iter().filter(|path| self.app_name(path).is_some_and(|known| same_name(known, name))).cloned().collect()
+    }
+
+    /// Adds a program under its display name. A copy of the same program whose file is gone, such as the folder of
+    /// a version that has since been updated, is replaced instead of being listed next to it.
+    pub fn add_app(&mut self, path: PathBuf, name: &str) {
+        let stale: Vec<PathBuf> = self.paths_named(name).into_iter().filter(|old| *old != path && !old.exists()).collect();
+        self.remove_apps(&stale);
+        if !self.apps.contains(&path) {
+            self.apps.push(path.clone());
+        }
+        self.app_names.insert(path.to_string_lossy().into_owned(), name.to_owned());
+    }
+
+    pub fn remove_apps(&mut self, paths: &[PathBuf]) {
+        self.apps.retain(|app| !paths.contains(app));
+        for path in paths {
+            self.app_names.remove(&path.to_string_lossy().into_owned());
+        }
     }
 
     pub fn load() -> Self {
@@ -126,6 +157,11 @@ impl HostFilter {
     pub fn excludes(&self, host: &str) -> bool {
         self.compiled.as_ref().is_some_and(|set| set.is_match(host))
     }
+}
+
+/// Display names compare without regard to case or surrounding spaces.
+pub fn same_name(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
 }
 
 /// A site entry such as `*inst*`: `*` stands for any characters, dots included.
@@ -246,6 +282,20 @@ mod tests {
         assert!(config.enabled && config.notifications && config.overlay && config.update_check && !config.autostart);
         assert_eq!(config.allowed_servers, ["203.0.113.1".parse::<std::net::IpAddr>().unwrap()]);
         assert_eq!(config.server_name(config.allowed_servers[0]), None);
+    }
+
+    #[test]
+    fn apps_are_remembered_by_name() {
+        let mut config = Config::default();
+        let missing = std::path::PathBuf::from(r"C:\nowhere\app-1.0\Discord.exe");
+        config.add_app(missing.clone(), "Discord");
+        assert_eq!(config.app_name(&missing), Some("Discord"));
+        let current = std::env::current_exe().unwrap();
+        config.add_app(current.clone(), "discord");
+        assert_eq!(config.apps, std::slice::from_ref(&current), "the copy whose file is gone is replaced");
+        assert_eq!(config.paths_named("DISCORD"), std::slice::from_ref(&current));
+        config.remove_apps(&[current]);
+        assert!(config.apps.is_empty() && config.app_names.is_empty());
     }
 
     #[test]

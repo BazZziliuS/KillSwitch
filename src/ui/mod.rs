@@ -1,5 +1,6 @@
 mod add_apps;
 mod catalog;
+mod history;
 mod home;
 mod language;
 pub mod overlay;
@@ -54,6 +55,7 @@ enum Page {
     Home,
     Sites,
     Vpn,
+    History,
     Settings,
     AddApps,
     AddSite,
@@ -66,7 +68,7 @@ enum Page {
 impl Page {
     /// Tab pages keep the tab bar; every other page is opened on top of them and hides it.
     fn is_tab(self) -> bool {
-        matches!(self, Page::Home | Page::Sites | Page::Vpn | Page::Settings)
+        matches!(self, Page::Home | Page::Sites | Page::Vpn | Page::History | Page::Settings)
     }
 }
 
@@ -134,8 +136,9 @@ impl App {
     fn add_app(&mut self, config: &mut Config, path: PathBuf, text: &Strings) {
         if config::is_vpn_client(&path) {
             self.notice = Some(text.vpn_client_refused.to_owned());
-        } else if !config.apps.contains(&path) {
-            config.apps.push(path);
+        } else {
+            let name = config.app_name(&path).map_or_else(|| apps::display_name(&path), str::to_owned);
+            config.add_app(path, &name);
             self.notice = None;
         }
     }
@@ -214,6 +217,7 @@ impl eframe::App for App {
                 Page::Home => self.home_page(page_ui, view, &mut config),
                 Page::Sites => self.sites_page(page_ui, view, &mut config),
                 Page::Vpn => self.vpn_page(page_ui, view, &mut config),
+                Page::History => self.history_page(page_ui, view),
                 Page::Settings => self.settings_page(page_ui, view, &mut config),
                 Page::AddApps => self.add_apps_page(page_ui, view, &mut config),
                 Page::AddSite => self.add_site_page(page_ui, view, &mut config),
@@ -228,6 +232,7 @@ impl eframe::App for App {
                     (Page::Home, TabIcon::Shield, text.protection),
                     (Page::Sites, TabIcon::Globe, text.sites),
                     (Page::Vpn, TabIcon::Lock, "VPN"),
+                    (Page::History, TabIcon::Clock, text.history),
                     (Page::Settings, TabIcon::Gear, text.settings),
                 ];
                 if let Some(page) = widgets::tab_bar(ui, &view.palette, full, self.page, &tabs)
