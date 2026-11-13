@@ -120,6 +120,7 @@ pub fn run(shared: Arc<Shared>, ctx: egui::Context) {
     let open = MenuItem::new(strings.tray_open, true, None);
     let quit = MenuItem::new(strings.tray_quit, true, None);
     let mut state = State::Off;
+    let mut tooltip = String::new();
     let tray = match build(&open, &quit, state, strings) {
         Ok(tray) => tray,
         Err(error) => {
@@ -149,18 +150,29 @@ pub fn run(shared: Arc<Shared>, ctx: egui::Context) {
             }
         }
         let current_language = language(&shared);
-        let current = State::of(&shared.status.lock().unwrap());
+        let (current, exit) = {
+            let status = shared.status.lock().unwrap();
+            (State::of(&status), status.snapshot.exit_ip.map(|address| (address, status.snapshot.exit_country.clone())))
+        };
         if current_language != chosen {
             chosen = current_language;
             strings = i18n::strings(chosen);
             open.set_text(strings.tray_open);
             quit.set_text(strings.tray_quit);
-            let _ = tray.set_tooltip(Some(current.tooltip(strings)));
         }
         if current != state {
             state = current;
             let _ = tray.set_icon(Some(icon(state)));
-            let _ = tray.set_tooltip(Some(state.tooltip(strings)));
+        }
+        // As in Kordon's tray window: the state, then the address and its country.
+        let text = match &exit {
+            Some((address, Some(country))) => format!("{}\n{address} · {}", state.tooltip(strings), (strings.country_name)(country)),
+            Some((address, None)) => format!("{}\n{address}", state.tooltip(strings)),
+            None => state.tooltip(strings).to_owned(),
+        };
+        if text != tooltip {
+            let _ = tray.set_tooltip(Some(&text));
+            tooltip = text;
         }
     }
 }

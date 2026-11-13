@@ -58,6 +58,7 @@ pub struct Snapshot {
     pub proxy: Proxy,
     /// Public address seen through the VPN; `None` until a recent check has succeeded.
     pub exit_ip: Option<IpAddr>,
+    pub exit_country: Option<super::egress::Country>,
     pub errors: Vec<String>,
 }
 
@@ -82,7 +83,7 @@ pub fn snapshot() -> Snapshot {
     let mut index = 0u32;
     let route_interface =
         (unsafe { GetBestInterface(u32::from_ne_bytes(ROUTE_PROBE), &mut index) } == ERROR_SUCCESS.0).then_some(index);
-    Snapshot { adapters, networks, route_interface, route_interface_v6: ipv6_route(), proxy: system_proxy(), exit_ip: None, errors }
+    Snapshot { adapters, networks, route_interface, route_interface_v6: ipv6_route(), proxy: system_proxy(), exit_ip: None, exit_country: None, errors }
 }
 
 fn ipv6_route() -> Option<u32> {

@@ -3,21 +3,21 @@ use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{self, Color32, CornerRadius, Frame, Id, Pos2, Rect, RichText, Sense, Stroke, TextureId, Ui, Vec2, pos2, vec2};
 
 const CARD_RADIUS: u8 = 12;
-const ROW_HEIGHT: f32 = 46.0;
+const ROW_HEIGHT: f32 = 44.0;
 const ROW_HEIGHT_TWO_LINES: f32 = 56.0;
-const ROW_PADDING: f32 = 14.0;
-const ICON_SIZE: f32 = 30.0;
-const SWITCH_SIZE: Vec2 = vec2(44.0, 26.0);
+const ROW_PADDING: f32 = 16.0;
+const ICON_SIZE: f32 = 28.0;
+/// Every leading mark takes the same column, so titles start on one line in every list.
+const LEADING_WIDTH: f32 = ICON_SIZE + 12.0;
+const SWITCH_SIZE: Vec2 = vec2(44.0, 24.0);
 const SWITCH_ANIMATION: f32 = 0.16;
 const NAV_HEIGHT: f32 = 44.0;
-const TAB_BAR_HEIGHT: f32 = 62.0;
-const TAB_BAR_INSET: f32 = 14.0;
-const TAB_BAR_GAP: f32 = 10.0;
+const TAB_BAR_HEIGHT: f32 = 60.0;
+const TAB_BAR_INSET: f32 = 16.0;
+const TAB_BAR_GAP: f32 = 12.0;
 const TAB_BAR_PADDING: f32 = 4.0;
 const TAB_ANIMATION: f32 = 0.2;
-/// How far the selected tab's lens sticks out of the bar.
-const TAB_LENS_OVERHANG: f32 = 3.0;
-const TAB_FADE: f32 = 34.0;
+const TAB_FADE: f32 = 32.0;
 const TAB_FADE_STRENGTH: f32 = 0.94;
 /// Empty space at the end of a tab page, so its last row can scroll clear of the floating bar.
 pub const TAB_BAR_CLEARANCE: f32 = TAB_BAR_HEIGHT + TAB_BAR_GAP + 16.0;
@@ -114,32 +114,26 @@ impl Group<'_> {
             Leading::Image(texture) => {
                 let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
                 painter.image(texture, icon_rect, uv, Color32::WHITE);
-                left += ICON_SIZE + 12.0;
+                left += LEADING_WIDTH;
             }
             Leading::Letter(letter) => {
-                painter.rect_filled(icon_rect, CornerRadius::same(7), palette.accent);
-                painter.text(
-                    icon_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    letter,
-                    theme::headline(),
-                    Color32::WHITE,
-                );
-                left += ICON_SIZE + 12.0;
+                painter.rect_filled(icon_rect, CornerRadius::same(8), palette.separator);
+                painter.text(icon_rect.center(), egui::Align2::CENTER_CENTER, letter, theme::headline(), palette.secondary);
+                left += LEADING_WIDTH;
             }
             Leading::Step(done) => {
                 let center = icon_rect.center();
                 if done {
                     painter.circle_filled(center, 10.0, palette.green);
-                    polyline(&painter, &[center + vec2(-4.5, 0.2), center + vec2(-1.2, 3.6), center + vec2(4.8, -3.4)], 1.9, Color32::WHITE);
+                    polyline(&painter, &[center + vec2(-4.5, 0.0), center + vec2(-1.5, 3.5), center + vec2(4.5, -3.5)], 2.0, Color32::WHITE);
                 } else {
-                    painter.circle_stroke(center, 9.5, Stroke::new(1.6, palette.tertiary));
+                    painter.circle_stroke(center, 9.5, Stroke::new(1.5, palette.tertiary));
                 }
-                left += ICON_SIZE + 8.0;
+                left += LEADING_WIDTH;
             }
             Leading::Dot(color) => {
-                painter.circle_filled(pos2(left + 5.0, rect.center().y), 5.0, color);
-                left += 22.0;
+                painter.circle_filled(pos2(left + 4.0, rect.center().y), 4.0, color);
+                left += 20.0;
             }
         }
 
@@ -220,7 +214,7 @@ pub fn text_field(ui: &mut Ui, palette: &Palette, value: &mut String, hint: &str
     Frame::new()
         .fill(palette.card)
         .corner_radius(CornerRadius::same(10))
-        .inner_margin(egui::Margin::symmetric(12, 9))
+        .inner_margin(egui::Margin::symmetric(12, 8))
         .show(ui, |ui| {
             ui.add(
                 egui::TextEdit::singleline(value)
@@ -286,7 +280,7 @@ pub fn section(ui: &mut Ui, palette: &Palette, header: Option<&str>, footer: Opt
             ui.add_space(ROW_PADDING);
             ui.label(RichText::new(header).font(theme::footnote()).color(palette.secondary));
         });
-        ui.add_space(6.0);
+        ui.add_space(8.0);
     }
     Frame::new().fill(palette.card).corner_radius(CornerRadius::same(CARD_RADIUS)).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -306,14 +300,14 @@ pub fn stat_card(ui: &mut Ui, palette: &Palette, header: &str, stats: &[(String,
         ui.add_space(ROW_PADDING);
         ui.label(RichText::new(header).font(theme::footnote()).color(palette.secondary));
     });
-    ui.add_space(6.0);
-    Frame::new().fill(palette.card).corner_radius(CornerRadius::same(CARD_RADIUS)).inner_margin(egui::Margin::symmetric(4, 14)).show(ui, |ui| {
+    ui.add_space(8.0);
+    Frame::new().fill(palette.card).corner_radius(CornerRadius::same(CARD_RADIUS)).inner_margin(egui::Margin::symmetric(4, 16)).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.columns(stats.len(), |columns| {
             for (column, (value, caption, color)) in columns.iter_mut().zip(stats) {
                 column.vertical_centered(|ui| {
-                    ui.label(RichText::new(value).font(theme::title()).color(*color));
-                    ui.add_space(2.0);
+                    ui.label(RichText::new(value).font(theme::title_small()).color(*color));
+                    ui.add_space(4.0);
                     ui.label(RichText::new(*caption).font(theme::footnote()).color(palette.secondary));
                 });
             }
@@ -322,7 +316,7 @@ pub fn stat_card(ui: &mut Ui, palette: &Palette, header: &str, stats: &[(String,
 }
 
 pub fn footnote(ui: &mut Ui, text: &str, color: Color32) {
-    ui.add_space(6.0);
+    ui.add_space(8.0);
     Frame::new().inner_margin(egui::Margin::symmetric(ROW_PADDING as i8, 0)).show(ui, |ui| {
         ui.label(RichText::new(text).font(theme::footnote()).color(color));
     });
@@ -357,7 +351,7 @@ pub fn nav_bar(ui: &mut Ui, palette: &Palette, title: &str, back_label: &str, do
 }
 
 pub fn page_title(ui: &mut Ui, palette: &Palette, title: &str) {
-    ui.add_space(14.0);
+    ui.add_space(16.0);
     ui.horizontal(|ui| {
         ui.add_space(ROW_PADDING);
         ui.label(RichText::new(title).font(theme::title()).color(palette.text));
@@ -373,13 +367,15 @@ pub enum TabIcon {
     Gear,
 }
 
+/// Line icons, one stroke for every tab, drawn in the label's color.
 fn paint_tab_icon(painter: &egui::Painter, icon: TabIcon, center: Pos2, color: Color32, background: Color32) {
-    const RADIUS: f32 = 10.5;
-    let stroke = Stroke::new(1.5, color);
+    const RADIUS: f32 = 9.0;
+    const STROKE: f32 = 1.5;
+    let stroke = Stroke::new(STROKE, color);
     match icon {
         TabIcon::Shield => {
-            let points = shield_outline().into_iter().map(|(x, y)| center + vec2(x, y) * RADIUS * 1.15).collect();
-            painter.add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+            let points = shield_outline().into_iter().map(|(x, y)| center + vec2(x, y) * RADIUS * 1.1).collect();
+            painter.add(egui::Shape::closed_line(points, stroke));
         }
         TabIcon::Globe => {
             painter.circle_stroke(center, RADIUS, stroke);
@@ -387,64 +383,32 @@ fn paint_tab_icon(painter: &egui::Painter, icon: TabIcon, center: Pos2, color: C
             painter.line_segment([center - vec2(RADIUS, 0.0), center + vec2(RADIUS, 0.0)], stroke);
         }
         TabIcon::Lock => {
-            let body = Rect::from_min_size(center + vec2(-8.0, -1.5), vec2(16.0, 12.0));
-            painter.rect_filled(body, CornerRadius::same(3), color);
+            let body = Rect::from_min_size(center + vec2(-7.0, -1.0), vec2(14.0, 10.0));
+            painter.rect_stroke(body, CornerRadius::same(2), stroke, egui::StrokeKind::Middle);
             let shackle: Vec<Pos2> = (0..=16)
                 .map(|step| {
                     let angle = std::f32::consts::PI * (1.0 + step as f32 / 16.0);
-                    center + vec2(angle.cos() * 5.0, angle.sin() * 5.5 - 4.0)
+                    center + vec2(angle.cos() * 4.0, angle.sin() * 4.0 - 5.0)
                 })
                 .collect();
-            polyline(painter, &shackle, 2.0, color);
-            polyline(painter, &[center + vec2(-5.0, -4.0), center + vec2(-5.0, -1.5)], 2.0, color);
-            polyline(painter, &[center + vec2(5.0, -4.0), center + vec2(5.0, -1.5)], 2.0, color);
+            polyline(painter, &shackle, STROKE, color);
+            polyline(painter, &[center + vec2(-4.0, -5.0), center + vec2(-4.0, -1.0)], STROKE, color);
+            polyline(painter, &[center + vec2(4.0, -5.0), center + vec2(4.0, -1.0)], STROKE, color);
         }
         TabIcon::Clock => {
-            painter.circle_stroke(center, RADIUS * 0.95, Stroke::new(2.0, color));
-            polyline(painter, &[center + vec2(0.0, -RADIUS * 0.55), center, center + vec2(RADIUS * 0.42, RADIUS * 0.25)], 2.0, color);
+            painter.circle_stroke(center, RADIUS, stroke);
+            polyline(painter, &[center + vec2(0.0, -5.0), center, center + vec2(3.5, 2.0)], STROKE, color);
         }
         TabIcon::Gear => {
-            const TEETH: usize = 8;
-            for tooth in 0..TEETH {
-                let angle = std::f32::consts::TAU * tooth as f32 / TEETH as f32;
-                let direction = vec2(angle.cos(), angle.sin());
-                polyline(painter, &[center + direction * RADIUS * 0.6, center + direction * RADIUS * 0.92], 3.4, color);
+            // Sliders: reads as settings at this size, where a line-drawn gear turns into a sun.
+            for (y, knob) in [(-5.0, 3.0), (0.0, -3.5), (5.0, 1.0)] {
+                polyline(painter, &[center + vec2(-RADIUS, y), center + vec2(RADIUS, y)], STROKE, color);
+                let knob = center + vec2(knob, y);
+                painter.circle_filled(knob, 2.5, background);
+                painter.circle_stroke(knob, 2.5, stroke);
             }
-            painter.circle_filled(center, RADIUS * 0.72, color);
-            painter.circle_filled(center, RADIUS * 0.32, background);
         }
     }
-}
-
-/// Outline of a horizontal capsule, clockwise from the top left.
-fn capsule_outline(rect: Rect) -> Vec<Pos2> {
-    const STEPS: usize = 20;
-    let radius = rect.height() / 2.0;
-    let arc = |center: Pos2, start: f32| {
-        (0..=STEPS).map(move |step| {
-            let angle = start + std::f32::consts::PI * step as f32 / STEPS as f32;
-            center + vec2(angle.cos(), angle.sin()) * radius
-        })
-    };
-    let left = pos2(rect.left() + radius, rect.center().y);
-    let right = pos2(rect.right() - radius, rect.center().y);
-    arc(right, -std::f32::consts::FRAC_PI_2).chain(arc(left, std::f32::consts::FRAC_PI_2)).collect()
-}
-
-/// Fills a capsule with a vertical gradient, which is what reads as a sheen on the glass.
-fn paint_glass(painter: &egui::Painter, rect: Rect, top: Color32, bottom: Color32) {
-    let mut mesh = egui::Mesh::default();
-    let color_at = |y: f32| top.lerp_to_gamma(bottom, ((y - rect.top()) / rect.height()).clamp(0.0, 1.0));
-    mesh.colored_vertex(rect.center(), color_at(rect.center().y));
-    let outline = capsule_outline(rect);
-    for point in &outline {
-        mesh.colored_vertex(*point, color_at(point.y));
-    }
-    let count = outline.len() as u32;
-    for index in 0..count {
-        mesh.add_triangle(0, index + 1, (index + 1) % count + 1);
-    }
-    painter.add(egui::Shape::mesh(mesh));
 }
 
 /// Vertical gradient from clear to `color`.
@@ -459,20 +423,7 @@ fn paint_fade(painter: &egui::Painter, rect: Rect, color: Color32) {
     painter.add(egui::Shape::mesh(mesh));
 }
 
-/// The faint rainbow that light picks up along the edge of a glass lens.
-fn paint_prismatic_rim(painter: &egui::Painter, rect: Rect) {
-    let outline = capsule_outline(rect.shrink(1.5));
-    for (index, point) in outline.iter().enumerate() {
-        let next = outline[(index + 1) % outline.len()];
-        let hue = index as f32 / outline.len() as f32 * 2.0 % 1.0;
-        let color = Color32::from(egui::ecolor::Hsva::new(hue, 0.75, 1.0, 0.28));
-        painter.line_segment([*point, next], Stroke::new(1.6, color));
-    }
-}
-
-/// Floating glass capsule in the style of current iOS. Returns the tab the user clicked.
-///
-/// egui can't blur what lies behind it, so the glass is approximated with translucency, a sheen and a bright rim.
+/// Floating tab bar: a raised surface with a hairline, the selected tab one surface step up. Returns the tab clicked.
 pub fn tab_bar<T: Copy + PartialEq>(ui: &mut Ui, palette: &Palette, area: Rect, selected: T, tabs: &[(T, TabIcon, &str)]) -> Option<T> {
     let rect = Rect::from_min_max(
         pos2(area.left() + TAB_BAR_INSET, area.bottom() - TAB_BAR_GAP - TAB_BAR_HEIGHT),
@@ -480,32 +431,14 @@ pub fn tab_bar<T: Copy + PartialEq>(ui: &mut Ui, palette: &Palette, area: Rect, 
     );
     let painter = ui.painter_at(area);
     let dark = palette.background.r() < 128;
-    let card = palette.card;
-    let lift = |channel: u8| channel.saturating_add(30);
-    let (top, bottom, rim, lens_top, lens_bottom) = if dark {
-        (
-            Color32::from_rgba_unmultiplied(lift(card.r()), lift(card.g()), lift(card.b()), 165),
-            Color32::from_rgba_unmultiplied(card.r(), card.g(), card.b(), 190),
-            Color32::from_white_alpha(46),
-            // Opaque, so the bar's rim doesn't show through as a line across the lens.
-            Color32::from_rgb(84, 84, 90),
-            Color32::from_rgb(62, 62, 68),
-        )
-    } else {
-        (
-            Color32::from_rgba_unmultiplied(255, 255, 255, 165),
-            Color32::from_rgba_unmultiplied(244, 244, 248, 190),
-            Color32::from_white_alpha(230),
-            Color32::WHITE,
-            Color32::from_rgb(248, 248, 252),
-        )
-    };
-    // Dissolves the page under the bar, standing in for the blur that egui can't do.
+    // The page dissolves under the bar, so rows never end in a hard cut against it.
     paint_fade(&painter, Rect::from_min_max(pos2(area.left(), rect.top() - TAB_FADE), area.max), palette.background);
     let corner = CornerRadius::same((TAB_BAR_HEIGHT / 2.0) as u8);
-    painter.add(egui::Shadow { offset: [0, 6], blur: 24, spread: 0, color: Color32::from_black_alpha(if dark { 110 } else { 42 }) }.as_shape(rect, corner));
-    paint_glass(&painter, rect, top, bottom);
-    painter.rect_stroke(rect, corner, Stroke::new(1.0, rim), egui::StrokeKind::Inside);
+    if !dark {
+        painter.add(egui::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(20) }.as_shape(rect, corner));
+    }
+    painter.rect_filled(rect, corner, palette.card);
+    painter.rect_stroke(rect, corner, Stroke::new(1.0, palette.text.gamma_multiply(0.08)), egui::StrokeKind::Inside);
 
     let width = (rect.width() - 2.0 * TAB_BAR_PADDING) / tabs.len() as f32;
     let cell_at = |position: f32| {
@@ -516,20 +449,19 @@ pub fn tab_bar<T: Copy + PartialEq>(ui: &mut Ui, palette: &Palette, area: Rect, 
     };
     let current = tabs.iter().position(|(tab, ..)| *tab == selected).unwrap_or(0) as f32;
     let position = ui.ctx().animate_value_with_time(ui.scope_id().with("tab-highlight"), current, TAB_ANIMATION);
-    let lens = cell_at(position).expand2(vec2(0.0, TAB_BAR_PADDING + TAB_LENS_OVERHANG));
-    let lens_corner = CornerRadius::same((lens.height() / 2.0) as u8);
-    painter.add(egui::Shadow { offset: [0, 3], blur: 16, spread: 0, color: Color32::from_black_alpha(if dark { 90 } else { 34 }) }.as_shape(lens, lens_corner));
-    paint_glass(&painter, lens, lens_top, lens_bottom);
-    paint_prismatic_rim(&painter, lens);
-    painter.rect_stroke(lens, lens_corner, Stroke::new(1.0, rim), egui::StrokeKind::Inside);
+    let lens = cell_at(position);
+    // Nested radius: the bar's corner less its padding.
+    painter.rect_filled(lens, CornerRadius::same((TAB_BAR_HEIGHT / 2.0 - TAB_BAR_PADDING) as u8), palette.hover);
 
     let mut clicked = None;
     for (index, (tab, icon, label)) in tabs.iter().enumerate() {
         let cell = cell_at(index as f32);
         let response = ui.interact(cell, ui.scope_id().with(("tab", index)), Sense::click());
-        let color = if *tab == selected { palette.accent } else { palette.text.gamma_multiply(0.72) };
-        paint_tab_icon(&painter, *icon, pos2(cell.center().x, cell.top() + 19.0), color, card);
-        painter.text(pos2(cell.center().x, cell.top() + 41.0), egui::Align2::CENTER_CENTER, label, theme::tab_label(), color);
+        let is_selected = *tab == selected;
+        let color = if is_selected { palette.accent } else { palette.secondary };
+        let fill = if is_selected { palette.hover } else { palette.card };
+        paint_tab_icon(&painter, *icon, pos2(cell.center().x, cell.top() + 18.0), color, fill);
+        painter.text(pos2(cell.center().x, cell.top() + 40.0), egui::Align2::CENTER_CENTER, label, theme::footnote(), color);
         if response.clicked() {
             clicked = Some(*tab);
         }

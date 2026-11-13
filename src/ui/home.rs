@@ -4,12 +4,12 @@ use super::{App, Page, View};
 use crate::config::{self, Config, TrustedNetwork};
 use crate::protection::rules::{self, Reason};
 use crate::updates;
-use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
+use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, Sense, Ui, Vec2, vec2};
 use std::net::IpAddr;
 use std::path::PathBuf;
 
 const COLOR_ANIMATION: f32 = 0.3;
-const SHIELD_SIZE: f32 = 54.0;
+const SHIELD_SIZE: f32 = 56.0;
 const HERO_RADIUS: u8 = 16;
 
 struct Hero {
@@ -221,12 +221,10 @@ fn status_card(ui: &mut Ui, view: View<'_>, config: &Config, hero: Hero) -> Opti
         animated(ui, "g", hero.color.g()),
         animated(ui, "b", hero.color.b()),
     );
-    let dark = palette.background.r() < 128;
-    let tint = palette.card.lerp_to_gamma(color, if dark { 0.14 } else { 0.08 });
     let mut clicked = false;
+    // A plain surface: the shield is the one colored thing on the screen.
     Frame::new()
-        .fill(tint)
-        .stroke(Stroke::new(1.0, color.gamma_multiply(0.25)))
+        .fill(palette.card)
         .corner_radius(CornerRadius::same(HERO_RADIUS))
         .inner_margin(Margin::same(16))
         .show(ui, |ui| {
@@ -234,10 +232,10 @@ fn status_card(ui: &mut Ui, view: View<'_>, config: &Config, hero: Hero) -> Opti
             ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(Vec2::splat(SHIELD_SIZE), Sense::hover());
                 widgets::shield(ui, rect, color, hero.glyph);
-                ui.add_space(14.0);
+                ui.add_space(12.0);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(hero.title).font(theme::title_small()).color(palette.text));
-                    ui.add_space(3.0);
+                    ui.add_space(4.0);
                     ui.add(egui::Label::new(RichText::new(&hero.subtitle).font(theme::callout()).color(palette.secondary)).wrap());
                 });
             });
@@ -249,12 +247,12 @@ fn status_card(ui: &mut Ui, view: View<'_>, config: &Config, hero: Hero) -> Opti
                 ui.add_space(12.0);
                 let label = RichText::new(label).font(theme::headline()).color(Color32::WHITE);
                 let button = egui::Button::new(label).fill(palette.accent).corner_radius(CornerRadius::same(10));
-                clicked = ui.add_sized(vec2(ui.available_width(), 34.0), button).clicked();
+                clicked = ui.add_sized(vec2(ui.available_width(), 36.0), button).clicked();
             }
-            ui.add_space(14.0);
+            ui.add_space(16.0);
             let pixel = 1.0 / ui.pixels_per_point();
             let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), pixel), Sense::hover());
-            ui.painter().rect_filled(line, CornerRadius::ZERO, color.gamma_multiply(0.25));
+            ui.painter().rect_filled(line, CornerRadius::ZERO, palette.separator);
             ui.add_space(12.0);
             status_strip(ui, view, config);
         });
@@ -277,11 +275,14 @@ fn status_strip(ui: &mut Ui, view: View<'_>, config: &Config) {
     } else {
         (text.off.to_owned(), palette.red)
     };
-    let server = match (config.server_check, snapshot.exit_ip) {
-        (false, _) => (text.ip_unchecked.to_owned(), palette.tertiary),
-        (true, None) => ("…".to_owned(), palette.secondary),
-        (true, Some(address)) => {
-            let allowed = config.allowed_servers.contains(&address);
+    // The address and its country, as Kordon shows them: asked only through the VPN, so there is none without it.
+    let country = snapshot.exit_country.as_ref().map_or("", |country| (text.country_name)(country));
+    let server = match snapshot.exit_ip {
+        _ if !config.server_check && !config.ip_info => (text.ip_unchecked.to_owned(), palette.tertiary),
+        None if rules::vpn_route(config, snapshot).is_none() => ("—".to_owned(), palette.tertiary),
+        None => ("…".to_owned(), palette.secondary),
+        Some(address) => {
+            let allowed = !config.server_check || config.allowed_servers.contains(&address);
             let label = config.server_name(address).map_or_else(|| address.to_string(), str::to_owned);
             (label, if allowed { palette.green } else { palette.orange })
         }
@@ -289,20 +290,22 @@ fn status_strip(ui: &mut Ui, view: View<'_>, config: &Config) {
     let cells = [
         (text.status_network, network.0, network.1, network.2),
         (text.status_vpn, vpn.0, "", vpn.1),
-        (text.status_ip, server.0, "", server.1),
+        (text.status_ip, server.0, country, server.1),
     ];
     ui.columns(cells.len(), |columns| {
         for (column, (caption, value, note, color)) in columns.iter_mut().zip(cells) {
             column.label(RichText::new(caption).font(theme::footnote()).color(palette.secondary));
-            column.add_space(2.0);
+            column.add_space(4.0);
+            // The lamp is the only colored mark; the words stay in the text colors.
             column.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 let (dot, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
-                ui.painter().circle_filled(dot.center(), 3.5, color);
-                ui.add_space(5.0);
+                ui.painter().circle_filled(dot.center(), 4.0, color);
+                ui.add_space(8.0);
                 ui.add(egui::Label::new(RichText::new(value).font(theme::callout()).color(palette.text)).truncate());
             });
             if !note.is_empty() {
-                column.label(RichText::new(note).font(theme::footnote()).color(color));
+                column.label(RichText::new(note).font(theme::footnote()).color(palette.secondary));
             }
         }
     });

@@ -22,7 +22,7 @@ impl App {
             self.page = Page::Home;
             self.notice = None;
         }
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         widgets::text_field(ui, palette, &mut self.search, text.search);
         self.show_notice(ui, view);
 

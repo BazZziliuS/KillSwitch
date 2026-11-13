@@ -61,11 +61,7 @@ pub fn callout() -> FontId {
 }
 
 pub fn footnote() -> FontId {
-    FontId::proportional(12.5)
-}
-
-pub fn tab_label() -> FontId {
-    FontId::proportional(11.0)
+    FontId::proportional(12.0)
 }
 
 pub fn headline() -> FontId {
@@ -73,11 +69,11 @@ pub fn headline() -> FontId {
 }
 
 pub fn title_small() -> FontId {
-    FontId::new(19.0, FontFamily::Name(SEMIBOLD.into()))
+    FontId::new(20.0, FontFamily::Name(SEMIBOLD.into()))
 }
 
 pub fn title() -> FontId {
-    FontId::new(23.0, FontFamily::Name(SEMIBOLD.into()))
+    FontId::new(24.0, FontFamily::Name(SEMIBOLD.into()))
 }
 
 fn system_font(file: &str) -> Option<Arc<FontData>> {

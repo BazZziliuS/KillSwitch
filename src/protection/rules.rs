@@ -47,9 +47,10 @@ pub fn ipv6_bypasses_tunnel(config: &Config, snapshot: &Snapshot) -> bool {
         && !is_tunnel(config, snapshot, snapshot.route_interface_v6)
 }
 
-/// How to reach the internet through the VPN for the server check; `None` when there is nothing to check.
+/// How to reach the internet through the VPN to learn its address; `None` when there is nothing to check. Without
+/// the VPN nothing is asked, so the services never see the real address.
 pub fn exit_route(config: &Config, snapshot: &Snapshot) -> Option<Route> {
-    if config.server_check { vpn_route(config, snapshot) } else { None }
+    if config.server_check || config.ip_info { vpn_route(config, snapshot) } else { None }
 }
 
 /// How to reach the internet through the VPN right now; `None` when the VPN is off.
@@ -166,7 +167,18 @@ mod tests {
     fn server_is_ignored_unless_the_check_is_on() {
         let snapshot = Snapshot { exit_ip: Some("198.51.100.9".parse().unwrap()), ..safe_snapshot() };
         assert!(evaluate(&config(), &snapshot).is_empty());
-        assert_eq!(exit_route(&config(), &snapshot), None);
+        let silent = Config { ip_info: false, ..config() };
+        assert_eq!(exit_route(&silent, &snapshot), None);
+    }
+
+    #[test]
+    fn the_address_is_looked_up_only_through_the_vpn() {
+        let snapshot = safe_snapshot();
+        assert_eq!(exit_route(&config(), &snapshot), vpn_route(&config(), &snapshot));
+        assert!(exit_route(&config(), &snapshot).is_some());
+        let mut no_vpn = safe_snapshot();
+        no_vpn.adapters.remove(0);
+        assert_eq!(exit_route(&config(), &no_vpn), None);
     }
 
     #[test]

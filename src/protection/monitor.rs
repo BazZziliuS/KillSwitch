@@ -153,6 +153,7 @@ pub fn run(shared: Arc<Shared>) {
         let config = shared.config.lock().unwrap().clone();
         let mut snapshot = network::snapshot();
         snapshot.exit_ip = exits.observe(rules::exit_route(&config, &snapshot));
+        snapshot.exit_country = snapshot.exit_ip.and_then(|address| exits.country(address));
         let reasons = rules::evaluate(&config, &snapshot);
         let must_block = config.enabled && !reasons.is_empty();
         host_filter.update(&config.site_filters);

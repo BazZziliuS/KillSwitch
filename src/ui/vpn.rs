@@ -48,6 +48,7 @@ impl App {
             if status.ipv6_guarded {
                 widgets::footnote(ui, text.ipv6_guarded, palette.orange);
             }
+            ip_section(ui, view, config);
             if let Some(address) = server_section(ui, view, config) {
                 self.search = config.server_name(address).unwrap_or_default().to_owned();
                 self.editing_server = Some(address);
@@ -60,7 +61,7 @@ impl App {
     pub(super) fn server_name_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
         let (palette, text) = (&view.palette, view.text);
         let nav = widgets::nav_bar(ui, palette, text.server_name, text.back, Some(text.done));
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         let field = widgets::text_field(ui, palette, &mut self.search, text.server_name_hint);
         let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
         if let Some(address) = self.editing_server {
@@ -79,6 +80,27 @@ impl App {
             self.page = Page::Vpn;
         }
     }
+}
+
+fn ip_section(ui: &mut Ui, view: View<'_>, config: &mut Config) {
+    let (palette, text, snapshot) = (&view.palette, view.text, &view.status.snapshot);
+    let detail = match snapshot.exit_ip {
+        Some(address) => match &snapshot.exit_country {
+            Some(country) => format!("{address} · {}", (text.country_name)(country)),
+            None => address.to_string(),
+        },
+        None if rules::vpn_route(config, snapshot).is_none() => text.ip_no_vpn.to_owned(),
+        None => text.ip_detecting.to_owned(),
+    };
+    section(ui, palette, None, Some(text.ip_info_footer), |group| {
+        let mut row = Row::new("ip-info", text.ip_info, Trailing::Switch { on: config.ip_info, enabled: true });
+        if config.ip_info || config.server_check {
+            row = row.subtitle(&detail, palette.secondary);
+        }
+        if group.row(row).trailing_clicked {
+            config.ip_info = !config.ip_info;
+        }
+    });
 }
 
 /// Returns the server the user clicked to rename.
@@ -100,9 +122,14 @@ fn server_section(ui: &mut Ui, view: View<'_>, config: &mut Config) -> Option<Ip
             Some(address) => {
                 let allowed = config.allowed_servers.contains(&address);
                 let ip = address.to_string();
+                let country = view.status.snapshot.exit_country.as_ref().map(|country| (text.country_name)(country));
+                let current = match country {
+                    Some(country) => format!("{} · {country}", text.server_current),
+                    None => text.server_current.to_owned(),
+                };
                 let (title, subtitle) = match config.server_name(address) {
-                    Some(name) => (name.to_owned(), format!("{ip} · {}", text.server_current)),
-                    None => (ip, text.server_current.to_owned()),
+                    Some(name) => (name.to_owned(), format!("{ip} · {current}")),
+                    None => (ip, current),
                 };
                 let mut row = Row::new("server-current", &title, Trailing::Switch { on: allowed, enabled: true })
                     .subtitle(&subtitle, palette.secondary);

@@ -1,4 +1,5 @@
-//! Asks a public echo service which address the internet sees, which identifies the VPN server in use.
+//! Asks a public echo service which address the internet sees, which identifies the VPN server in use, and a
+//! geolocation service which country that address belongs to.
 //!
 //! The connection table can't answer this: VPN cores also connect straight to sites excluded from the tunnel, and UDP
 //! protocols leave no remote address at all.
@@ -13,6 +14,25 @@ use windows::core::{HSTRING, PCWSTR, w};
 const SERVICES: [PCWSTR; 2] = [w!("api.ipify.org"), w!("ipv4.icanhazip.com")];
 const TIMEOUT_MS: i32 = 5000;
 const MAX_ADDRESS_RESPONSE: usize = 64;
+const GEO_SERVICE: PCWSTR = w!("ipwho.is");
+const MAX_GEO_RESPONSE: usize = 1024;
+
+/// Where an address is registered, with the country named in each interface language.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Country {
+    pub code: String,
+    pub name_en: String,
+    pub name_ru: String,
+}
+
+#[derive(serde::Deserialize)]
+struct GeoAnswer {
+    success: bool,
+    #[serde(default)]
+    country: String,
+    #[serde(default)]
+    country_code: String,
+}
 
 struct Handle(*mut c_void);
 
@@ -40,6 +60,23 @@ pub fn public_ip(proxy: Option<&str>) -> Result<IpAddr, String> {
         }
     }
     Err(last_error)
+}
+
+/// Looks the address up once per language, through the same route as the address check, so the service sees
+/// only the VPN's address.
+pub fn country(address: IpAddr, proxy: Option<&str>) -> Result<Country, String> {
+    let lookup = |lang: &str| -> Result<GeoAnswer, String> {
+        let path = HSTRING::from(format!("/{address}?lang={lang}&fields=success,country,country_code"));
+        let body = fetch(GEO_SERVICE, PCWSTR(path.as_ptr()), proxy, MAX_GEO_RESPONSE)?;
+        parse_geo(&body).ok_or_else(|| "unexpected response".to_owned())
+    };
+    let english = lookup("en")?;
+    let russian = lookup("ru").map_or_else(|_| english.country.clone(), |answer| answer.country);
+    Ok(Country { code: english.country_code, name_en: english.country, name_ru: russian })
+}
+
+fn parse_geo(body: &[u8]) -> Option<GeoAnswer> {
+    serde_json::from_slice::<GeoAnswer>(body).ok().filter(|answer| answer.success && !answer.country.is_empty())
 }
 
 fn query(host: PCWSTR, proxy: Option<&str>) -> Result<IpAddr, String> {
@@ -97,7 +134,15 @@ pub fn fetch(host: PCWSTR, path: PCWSTR, proxy: Option<&str>, limit: usize) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::parse_address;
+    use super::{parse_address, parse_geo};
+
+    #[test]
+    fn reads_the_country_from_the_geolocation_answer() {
+        let answer = parse_geo(br#"{"success":true,"country":"Netherlands","country_code":"NL"}"#).unwrap();
+        assert_eq!((answer.country.as_str(), answer.country_code.as_str()), ("Netherlands", "NL"));
+        assert!(parse_geo(br#"{"success":false,"message":"Invalid IP address"}"#).is_none());
+        assert!(parse_geo(b"<html>").is_none());
+    }
 
     #[test]
     fn accepts_only_a_bare_address() {

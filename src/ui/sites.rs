@@ -73,7 +73,7 @@ impl App {
             self.page = Page::Sites;
             self.notice = None;
         }
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         let field = widgets::text_field(ui, palette, &mut self.search, "example.com, *inst*");
         let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
         widgets::footnote(ui, text.add_site_footer, palette.secondary);
@@ -197,7 +197,7 @@ impl App {
     pub(super) fn site_filters_page(&mut self, ui: &mut Ui, view: View<'_>, config: &mut Config) {
         let (palette, text) = (&view.palette, view.text);
         let nav = widgets::nav_bar(ui, palette, text.site_filters, text.back, Some(text.done));
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         let field = widgets::text_field(ui, palette, &mut self.search, r"ads|^cdn\.");
         let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
         widgets::footnote(ui, text.site_filters_footer, palette.secondary);

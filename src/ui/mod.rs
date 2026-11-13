@@ -30,7 +30,7 @@ const WINDOW_SIZE: [f32; 2] = [420.0, 720.0];
 const WINDOW_ICON_SIZE: u32 = 64;
 const WINDOW_ICON_COLOR: [u8; 3] = [0, 122, 255];
 const REFRESH: Duration = Duration::from_millis(500);
-const PAGE_MARGIN: Vec2 = vec2(18.0, 6.0);
+const PAGE_MARGIN: Vec2 = vec2(16.0, 8.0);
 
 /// `start_hidden` leaves only the tray icon, for starting at logon.
 pub fn run(shared: Arc<Shared>, start_hidden: bool) -> eframe::Result {

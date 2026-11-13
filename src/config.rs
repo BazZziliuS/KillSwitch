@@ -30,6 +30,8 @@ pub struct Config {
     pub proxy_enabled: bool,
     /// Off by default because the check contacts a third-party service.
     pub server_check: bool,
+    /// Shows the VPN's public address and its country. Asked only through the VPN.
+    pub ip_info: bool,
     /// Public addresses of the VPN servers the protected traffic may leave through.
     pub allowed_servers: Vec<IpAddr>,
     /// User-given names, keyed by address text. Separate from `allowed_servers` so that existing settings keep loading.
@@ -55,6 +57,7 @@ impl Default for Config {
             tun_adapters: vec!["throne-tun".into()],
             proxy_enabled: true,
             server_check: false,
+            ip_info: true,
             allowed_servers: Vec::new(),
             server_names: BTreeMap::new(),
             autostart: false,
